@@ -128,7 +128,7 @@ importers:
         specifier: ^1.13.0
         version: 1.19.11(hono@4.12.8)
       '@hyperframes/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       hono:
         specifier: ^4.6.0
@@ -192,10 +192,10 @@ importers:
         specifier: ^1.13.0
         version: 1.19.11(hono@4.12.8)
       '@hyperframes/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@hyperframes/engine':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../engine
       hono:
         specifier: ^4.6.0
