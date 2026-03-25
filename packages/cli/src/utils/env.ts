@@ -1,0 +1,12 @@
+/**
+ * Detect whether we're running from source (monorepo dev) or from the built bundle.
+ * In dev: files are .ts (running via tsx). In production: bundled into .js by tsup.
+ */
+export function isDevMode(): boolean {
+  try {
+    const url = new URL(import.meta.url);
+    return url.pathname.endsWith(".ts");
+  } catch {
+    return false;
+  }
+}

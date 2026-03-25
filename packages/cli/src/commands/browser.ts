@@ -48,7 +48,7 @@ async function runEnsure(): Promise<void> {
   });
 
   downloadSpinner.stop(c.success("Download complete"));
-  trackBrowserInstall(true);
+  trackBrowserInstall();
 
   console.log();
   console.log(`   ${c.dim("Source:")}  ${c.bold(result.source)}`);

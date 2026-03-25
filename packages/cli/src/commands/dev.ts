@@ -5,6 +5,7 @@ import { resolve, dirname, basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as clack from "@clack/prompts";
 import { c } from "../ui/colors.js";
+import { isDevMode } from "../utils/env.js";
 
 /**
  * Check if a port is available by trying to listen on it briefly.
@@ -29,19 +30,6 @@ async function findAvailablePort(startPort: number): Promise<number> {
     if (await isPortAvailable(port)) return port;
   }
   return startPort; // fallback — let the server fail with a clear error
-}
-
-/**
- * Detect whether we're running from source (monorepo dev) or from the built bundle.
- * When running via tsx from source, the file is at cli/src/commands/dev.ts.
- * When running from the built bundle, the file is at cli/dist/cli.js.
- * We check the filename portion of the URL to avoid false positives from
- * directory names (e.g., /Users/someone/src/...).
- */
-function isDevMode(): boolean {
-  const url = new URL(import.meta.url);
-  // In dev mode the file is a .ts source file; in production it's a bundled .js
-  return url.pathname.endsWith(".ts");
 }
 
 export default defineCommand({

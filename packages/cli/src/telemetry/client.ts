@@ -1,9 +1,7 @@
 import { readConfig, writeConfig } from "./config.js";
 import { VERSION } from "../version.js";
-
-// ---------------------------------------------------------------------------
-// PostHog configuration
-// ---------------------------------------------------------------------------
+import { c } from "../ui/colors.js";
+import { isDevMode } from "../utils/env.js";
 
 // This is a public project API key — safe to embed in client-side code.
 // It only allows writing events, not reading data.
@@ -12,21 +10,7 @@ const POSTHOG_HOST = "https://us.i.posthog.com";
 const FLUSH_TIMEOUT_MS = 5_000;
 
 // ---------------------------------------------------------------------------
-// Dev mode detection — telemetry is disabled when running from source (tsx)
-// ---------------------------------------------------------------------------
-
-function isDevMode(): boolean {
-  // In dev: files are .ts (running via tsx). In production: bundled .js
-  try {
-    const url = new URL(import.meta.url);
-    return url.pathname.endsWith(".ts");
-  } catch {
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Lightweight PostHog client — we use the HTTP API directly to avoid
+// Lightweight PostHog client — uses the HTTP batch API directly to avoid
 // pulling in the full posthog-node SDK and its dependencies.
 // All calls are fire-and-forget with a hard timeout.
 // ---------------------------------------------------------------------------
@@ -41,44 +25,39 @@ let eventQueue: Array<{
   timestamp: string;
 }> = [];
 
-let isEnabled: boolean | null = null;
-let anonymousId: string | null = null;
+let telemetryEnabled: boolean | null = null;
 
 /**
  * Check if telemetry should be active.
  * Disabled when: dev mode, user opted out, CI environment, or HYPERFRAMES_NO_TELEMETRY set.
  */
-function shouldTrack(): boolean {
-  if (isEnabled !== null) return isEnabled;
+export function shouldTrack(): boolean {
+  if (telemetryEnabled !== null) return telemetryEnabled;
 
-  // Environment overrides
   if (process.env["HYPERFRAMES_NO_TELEMETRY"] === "1" || process.env["DO_NOT_TRACK"] === "1") {
-    isEnabled = false;
+    telemetryEnabled = false;
     return false;
   }
 
-  // CI detection
   if (process.env["CI"] === "true" || process.env["CI"] === "1") {
-    isEnabled = false;
+    telemetryEnabled = false;
     return false;
   }
 
-  // Dev mode — never phone home during development
   if (isDevMode()) {
-    isEnabled = false;
+    telemetryEnabled = false;
     return false;
   }
 
   // Placeholder API key means it hasn't been configured yet
   if (POSTHOG_API_KEY === "__POSTHOG_API_KEY__") {
-    isEnabled = false;
+    telemetryEnabled = false;
     return false;
   }
 
   const config = readConfig();
-  isEnabled = config.telemetryEnabled;
-  anonymousId = config.anonymousId;
-  return isEnabled;
+  telemetryEnabled = config.telemetryEnabled;
+  return telemetryEnabled;
 }
 
 /**
@@ -86,11 +65,6 @@ function shouldTrack(): boolean {
  */
 export function trackEvent(event: string, properties: EventProperties = {}): void {
   if (!shouldTrack()) return;
-
-  if (!anonymousId) {
-    const config = readConfig();
-    anonymousId = config.anonymousId;
-  }
 
   eventQueue.push({
     event,
@@ -106,19 +80,19 @@ export function trackEvent(event: string, properties: EventProperties = {}): voi
 }
 
 /**
- * Flush all queued events to PostHog. Called on process exit.
- * Uses the /batch endpoint for efficiency.
+ * Flush all queued events to PostHog via async HTTP POST.
+ * Called before normal process exit via `beforeExit`.
  */
 export async function flush(): Promise<void> {
-  if (eventQueue.length === 0 || !shouldTrack()) {
-    eventQueue = [];
+  if (eventQueue.length === 0) {
     return;
   }
 
+  const config = readConfig();
   const batch = eventQueue.map((e) => ({
     event: e.event,
     properties: e.properties,
-    distinct_id: anonymousId,
+    distinct_id: config.anonymousId,
     timestamp: e.timestamp,
   }));
   eventQueue = [];
@@ -141,6 +115,40 @@ export async function flush(): Promise<void> {
 }
 
 /**
+ * Synchronous flush for use in the `exit` event handler (which doesn't support async).
+ * Uses a synchronous XMLHttpRequest-style approach via child_process to ensure
+ * events are sent even when process.exit() is called.
+ */
+export function flushSync(): void {
+  if (eventQueue.length === 0) {
+    return;
+  }
+
+  const config = readConfig();
+  const batch = eventQueue.map((e) => ({
+    event: e.event,
+    properties: e.properties,
+    distinct_id: config.anonymousId,
+    timestamp: e.timestamp,
+  }));
+  eventQueue = [];
+
+  const payload = JSON.stringify({ api_key: POSTHOG_API_KEY, batch });
+
+  try {
+    // Spawn a detached process to send the request so we don't block exit.
+    // The subprocess inherits nothing and runs independently.
+    const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+    execFileSync(process.execPath, [
+      "-e",
+      `fetch(${JSON.stringify(`${POSTHOG_HOST}/batch/`)},{method:"POST",headers:{"Content-Type":"application/json"},body:${JSON.stringify(payload)},signal:AbortSignal.timeout(${FLUSH_TIMEOUT_MS})}).catch(()=>{})`,
+    ], { stdio: "ignore", timeout: FLUSH_TIMEOUT_MS });
+  } catch {
+    // Silently ignore
+  }
+}
+
+/**
  * Show the first-run telemetry notice if it hasn't been shown yet.
  * Returns true if the notice was shown (so callers can add spacing).
  */
@@ -150,15 +158,11 @@ export function showTelemetryNotice(): boolean {
   const config = readConfig();
   if (config.telemetryNoticeShown) return false;
 
-  // Dynamic import to avoid pulling colors into the check path
-  const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
-  const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
-
   console.log();
-  console.log(`  ${dim("Hyperframes collects anonymous usage data to improve the tool.")}`);
-  console.log(`  ${dim("No personal info, file paths, or content is collected.")}`);
+  console.log(`  ${c.dim("Hyperframes collects anonymous usage data to improve the tool.")}`);
+  console.log(`  ${c.dim("No personal info, file paths, or content is collected.")}`);
   console.log();
-  console.log(`  ${dim("Disable anytime:")} ${cyan("hyperframes telemetry disable")}`);
+  console.log(`  ${c.dim("Disable anytime:")} ${c.accent("hyperframes telemetry disable")}`);
   console.log();
 
   config.telemetryNoticeShown = true;
