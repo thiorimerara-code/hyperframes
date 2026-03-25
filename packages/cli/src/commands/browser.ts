@@ -9,6 +9,7 @@ import {
   CHROME_VERSION,
   CACHE_DIR,
 } from "../browser/manager.js";
+import { trackBrowserInstall } from "../telemetry/events.js";
 
 async function runEnsure(): Promise<void> {
   clack.intro(c.bold("hyperframes browser ensure"));
@@ -47,6 +48,7 @@ async function runEnsure(): Promise<void> {
   });
 
   downloadSpinner.stop(c.success("Download complete"));
+  trackBrowserInstall(true);
 
   console.log();
   console.log(`   ${c.dim("Source:")}  ${c.bold(result.source)}`);

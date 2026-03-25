@@ -6,6 +6,7 @@ import { loadProducer } from "../utils/producer.js";
 import { c } from "../ui/colors.js";
 import { formatBytes, formatDuration, errorBox } from "../ui/format.js";
 import { renderProgress } from "../ui/progress.js";
+import { trackRenderComplete, trackRenderError } from "../telemetry/events.js";
 
 const VALID_FPS = new Set([24, 30, 60]);
 const VALID_QUALITY = new Set(["draft", "standard", "high"]);
@@ -158,12 +159,21 @@ async function renderDocker(
     });
     await producer.executeRenderJob(job, projectDir, outputPath);
   } catch (error: unknown) {
+    trackRenderError({ fps: options.fps, quality: options.quality, docker: true });
     const message = error instanceof Error ? error.message : String(error);
     errorBox("Render failed", message, "Try --docker for containerized rendering");
     process.exit(1);
   }
 
   const elapsed = Date.now() - startTime;
+  trackRenderComplete({
+    durationMs: elapsed,
+    fps: options.fps,
+    quality: options.quality,
+    workers: options.workers ?? 4,
+    docker: true,
+    gpu: options.gpu,
+  });
   printRenderComplete(outputPath, elapsed, options.quiet);
 }
 
@@ -191,12 +201,21 @@ async function renderLocal(
   try {
     await producer.executeRenderJob(job, projectDir, outputPath, onProgress);
   } catch (error: unknown) {
+    trackRenderError({ fps: options.fps, quality: options.quality, docker: false });
     const message = error instanceof Error ? error.message : String(error);
     errorBox("Render failed", message, "Try --docker for containerized rendering");
     process.exit(1);
   }
 
   const elapsed = Date.now() - startTime;
+  trackRenderComplete({
+    durationMs: elapsed,
+    fps: options.fps,
+    quality: options.quality,
+    workers: options.workers ?? 4,
+    docker: false,
+    gpu: options.gpu,
+  });
   printRenderComplete(outputPath, elapsed, options.quiet);
 }
 

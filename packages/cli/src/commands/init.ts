@@ -14,6 +14,7 @@ import { execSync, execFileSync, spawn } from "node:child_process";
 import * as clack from "@clack/prompts";
 import { c } from "../ui/colors.js";
 import { TEMPLATES, type TemplateId } from "../templates/generators.js";
+import { trackInitTemplate } from "../telemetry/events.js";
 
 const ALL_TEMPLATE_IDS = TEMPLATES.map((t) => t.id);
 
@@ -380,6 +381,7 @@ export default defineCommand({
       }
 
       scaffoldProject(destDir, basename(destDir), templateId, localVideoName);
+      trackInitTemplate(templateId);
 
       console.log(c.success(`\nCreated ${c.accent(name + "/")}`));
       for (const f of readdirSync(destDir)) {
@@ -498,6 +500,7 @@ export default defineCommand({
     const templateId: TemplateId = templateResult;
 
     // 4. Copy template and patch
+    trackInitTemplate(templateId);
     scaffoldProject(destDir, name, templateId, localVideoName);
 
     const files = readdirSync(destDir);
