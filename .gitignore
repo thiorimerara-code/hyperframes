@@ -42,6 +42,9 @@ npm-debug.log*
 tmp/
 .tmp/
 
+# Generated files
+packages/producer/src/services/fontData.generated.ts
+
 # Test artifacts
 my-video/
 packages/studio/data/

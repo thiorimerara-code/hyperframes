@@ -1,9 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { createRequire } from "node:module";
 import { parseHTML } from "linkedom";
-
-const require = createRequire(import.meta.url);
+import { EMBEDDED_FONT_DATA } from "./fontData.generated.js";
 
 type FontFaceSpec = {
   weight: string;
@@ -104,9 +100,6 @@ const FONT_ALIASES: Record<string, keyof typeof CANONICAL_FONTS> = {
   garamond: "eb-garamond",
 };
 
-const PACKAGE_ROOT_CACHE = new Map<string, string>();
-const FONT_DATA_URI_CACHE = new Map<string, string>();
-
 function normalizeFamilyName(family: string): string {
   return family
     .trim()
@@ -115,60 +108,18 @@ function normalizeFamilyName(family: string): string {
     .toLowerCase();
 }
 
-function packageRoot(packageName: string): string {
-  const cached = PACKAGE_ROOT_CACHE.get(packageName);
-  if (cached) {
-    return cached;
-  }
-
-  const packageJsonPath = require.resolve(`${packageName}/package.json`);
-  const root = dirname(packageJsonPath);
-  PACKAGE_ROOT_CACHE.set(packageName, root);
-  return root;
-}
-
-function resolveFontFile(
-  packageName: string,
-  weight: string,
-  style: "normal" | "italic" = "normal",
-): string {
-  const root = packageRoot(packageName);
-  const filesDir = join(root, "files");
-  const slug = packageName.replace("@fontsource/", "");
-  const files = readdirSync(filesDir);
-
-  const exact = `${slug}-latin-${weight}-${style}.woff2`;
-  if (files.includes(exact)) {
-    return join(filesDir, exact);
-  }
-
-  const relaxed = files.find((file) => {
-    return file.endsWith(`-${weight}-${style}.woff2`) && file.includes("-latin-");
-  });
-  if (relaxed) {
-    return join(filesDir, relaxed);
-  }
-
-  throw new Error(
-    `No deterministic font asset found for ${packageName} weight=${weight} style=${style}`,
-  );
-}
-
 function fontDataUri(
   packageName: string,
   weight: string,
   style: "normal" | "italic" = "normal",
 ): string {
   const key = `${packageName}:${weight}:${style}`;
-  const cached = FONT_DATA_URI_CACHE.get(key);
-  if (cached) {
-    return cached;
+  const uri = EMBEDDED_FONT_DATA.get(key);
+  if (!uri) {
+    throw new Error(
+      `No embedded font data for ${key}. Regenerate with: tsx scripts/generate-font-data.ts`,
+    );
   }
-
-  const fontPath = resolveFontFile(packageName, weight, style);
-  const content = readFileSync(fontPath);
-  const uri = `data:font/woff2;base64,${content.toString("base64")}`;
-  FONT_DATA_URI_CACHE.set(key, uri);
   return uri;
 }
 

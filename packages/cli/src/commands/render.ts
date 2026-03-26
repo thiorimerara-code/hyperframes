@@ -98,6 +98,7 @@ export default defineCommand({
     }
 
     // ── Ensure browser for local renders ────────────────────────────────
+    let browserPath: string | undefined;
     if (!useDocker) {
       const { ensureBrowser } = await import("../browser/manager.js");
       const clack = await import("@clack/prompts");
@@ -113,6 +114,7 @@ export default defineCommand({
             );
           },
         });
+        browserPath = info.executablePath;
         s.stop(c.dim(`Browser: ${info.source}`));
       } catch (err: unknown) {
         s.stop(c.error("Browser not available"));
@@ -129,7 +131,14 @@ export default defineCommand({
     if (useDocker) {
       await renderDocker(project.dir, outputPath, { fps, quality, workers, gpu: useGpu, quiet });
     } else {
-      await renderLocal(project.dir, outputPath, { fps, quality, workers, gpu: useGpu, quiet });
+      await renderLocal(project.dir, outputPath, {
+        fps,
+        quality,
+        workers,
+        gpu: useGpu,
+        quiet,
+        browserPath,
+      });
     }
   },
 });
@@ -140,6 +149,7 @@ interface RenderOptions {
   workers?: number;
   gpu: boolean;
   quiet: boolean;
+  browserPath?: string;
 }
 
 async function renderDocker(
@@ -184,6 +194,14 @@ async function renderLocal(
 ): Promise<void> {
   const producer = await loadProducer();
   const startTime = Date.now();
+
+  // Pass the resolved browser path to the producer via env var so
+  // resolveConfig() picks it up. This bridges the CLI's ensureBrowser()
+  // (which knows about system Chrome on macOS) with the engine's
+  // acquireBrowser() (which only checks the puppeteer cache).
+  if (options.browserPath && !process.env.PRODUCER_HEADLESS_SHELL_PATH) {
+    process.env.PRODUCER_HEADLESS_SHELL_PATH = options.browserPath;
+  }
 
   const job = producer.createRenderJob({
     fps: options.fps,
