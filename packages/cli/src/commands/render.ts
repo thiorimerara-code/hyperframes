@@ -13,21 +13,11 @@ const VALID_FPS = new Set([24, 30, 60]);
 const VALID_QUALITY = new Set(["draft", "standard", "high"]);
 const VALID_FORMAT = new Set(["mp4", "webm"]);
 
-/**
- * Calculate a conservative default worker count for CLI use.
- *
- * Uses half of available CPU cores, capped at 4. Each worker spawns a
- * separate Chrome browser process (~256 MB RAM each), so we keep the
- * default low to avoid resource contention with FFmpeg encoding and
- * other applications on the user's machine.
- *
- *   2-core laptop  → 1 worker
- *   4-core laptop  → 2 workers
- *   8-core desktop → 4 workers
- *  16-core server  → 4 workers (capped)
- */
+const CPU_CORE_COUNT = cpus().length;
+
+/** Half of CPU cores, capped at 4. Each worker spawns a Chrome process (~256 MB). */
 function defaultWorkerCount(): number {
-  return Math.max(1, Math.min(Math.floor(cpus().length / 2), 4));
+  return Math.max(1, Math.min(Math.floor(CPU_CORE_COUNT / 2), 4));
 }
 
 export default defineCommand({
@@ -131,10 +121,7 @@ Examples:
       : join(rendersDir, `${project.name}${ext}`);
 
     // Ensure output directory exists
-    const outputDir = dirname(outputPath);
-    if (!existsSync(outputDir)) {
-      mkdirSync(outputDir, { recursive: true });
-    }
+    mkdirSync(dirname(outputPath), { recursive: true });
 
     const useDocker = args.docker ?? false;
     const useGpu = args.gpu ?? false;
@@ -146,7 +133,7 @@ Examples:
       const workerLabel =
         args.workers != null
           ? `${workerCount} workers`
-          : `${workerCount} workers (auto \u2014 half of ${cpus().length} cores)`;
+          : `${workerCount} workers (auto \u2014 half of ${CPU_CORE_COUNT} cores)`;
       console.log("");
       console.log(
         c.accent("\u25C6") +
@@ -207,7 +194,7 @@ Examples:
         fps,
         quality,
         format,
-        workers,
+        workers: workerCount,
         gpu: useGpu,
         quiet,
       });
@@ -216,7 +203,7 @@ Examples:
         fps,
         quality,
         format,
-        workers,
+        workers: workerCount,
         gpu: useGpu,
         quiet,
         browserPath,
@@ -229,7 +216,7 @@ interface RenderOptions {
   fps: 24 | 30 | 60;
   quality: "draft" | "standard" | "high";
   format: "mp4" | "webm";
-  workers?: number;
+  workers: number;
   gpu: boolean;
   quiet: boolean;
   browserPath?: string;
@@ -268,7 +255,7 @@ async function renderDocker(
     durationMs: elapsed,
     fps: options.fps,
     quality: options.quality,
-    workers: options.workers ?? defaultWorkerCount(),
+    workers: options.workers,
     docker: true,
     gpu: options.gpu,
   });
@@ -323,7 +310,7 @@ async function renderLocal(
     durationMs: elapsed,
     fps: options.fps,
     quality: options.quality,
-    workers: options.workers ?? defaultWorkerCount(),
+    workers: options.workers,
     docker: false,
     gpu: options.gpu,
   });
