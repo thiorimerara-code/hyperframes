@@ -202,15 +202,20 @@ function fallbackInstall(targets: Target[]): {
     }
   }
 
+  // Install to first target and collect results, then copy to remaining targets
+  const [first, ...rest] = targets;
   const allInstalled: InstalledSkill[] = [];
-  let counted = false;
-  for (const target of targets) {
+  if (first) {
+    mkdirSync(first.dir, { recursive: true });
+    for (const { skillsDir, source } of fetched) {
+      allInstalled.push(...installSkillsFromDir(skillsDir, first.dir, source.name));
+    }
+  }
+  for (const target of rest) {
     mkdirSync(target.dir, { recursive: true });
     for (const { skillsDir, source } of fetched) {
-      const skills = installSkillsFromDir(skillsDir, target.dir, source.name);
-      if (!counted) allInstalled.push(...skills);
+      installSkillsFromDir(skillsDir, target.dir, source.name);
     }
-    counted = true;
   }
 
   return { count: allInstalled.length, installed: allInstalled, skipped };
@@ -301,12 +306,10 @@ async function runInstall({ args }: { args: Record<string, unknown> }): Promise<
 
     if (installed.length > 0) {
       clack.outro(c.success(`${installed.join(" + ")} skills installed.`));
-    } else {
-      clack.log.warn("npx skills add failed — trying fallback...");
-      // Fall through to git fallback below
+      return;
     }
 
-    if (installed.length > 0) return;
+    clack.log.warn("npx skills add failed — trying fallback...");
   }
 
   // Fallback: git clone + copy

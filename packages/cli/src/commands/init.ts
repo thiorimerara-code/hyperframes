@@ -196,29 +196,26 @@ function transcodeToMp4(inputPath: string, outputPath: string): Promise<boolean>
 // Static template helpers
 // ---------------------------------------------------------------------------
 
-function getStaticTemplateDir(templateId: string): string {
-  const dir = dirname(fileURLToPath(import.meta.url));
-  // In dev: cli/src/commands/ → ../templates = cli/src/templates/
-  // In built: cli/dist/ → templates = cli/dist/templates/
-  const devPath = resolve(dir, "..", "templates", templateId);
-  const builtPath = resolve(dir, "templates", templateId);
+/** Resolve an asset directory that differs between dev (src/) and built (dist/). */
+function resolveAssetDir(devSegments: string[], builtSegments: string[]): string {
+  const base = dirname(fileURLToPath(import.meta.url));
+  const devPath = resolve(base, ...devSegments);
+  const builtPath = resolve(base, ...builtSegments);
   return existsSync(devPath) ? devPath : builtPath;
+}
+
+function getStaticTemplateDir(templateId: string): string {
+  return resolveAssetDir(["..", "templates", templateId], ["templates", templateId]);
 }
 
 function getSharedTemplateDir(): string {
-  const dir = dirname(fileURLToPath(import.meta.url));
-  const devPath = resolve(dir, "..", "templates", "_shared");
-  const builtPath = resolve(dir, "templates", "_shared");
-  return existsSync(devPath) ? devPath : builtPath;
+  return resolveAssetDir(["..", "templates", "_shared"], ["templates", "_shared"]);
 }
 
 function getBundledSkillsDir(): string {
-  const dir = dirname(fileURLToPath(import.meta.url));
-  // In dev: cli/src/commands/ → ../../../../skills = repo root skills/
-  // In built: cli/dist/ → skills = cli/dist/skills/
-  const devPath = resolve(dir, "..", "..", "..", "..", "skills");
-  const builtPath = resolve(dir, "skills");
-  return existsSync(devPath) ? devPath : builtPath;
+  // In dev: cli/src/commands/ → repo root skills/
+  // In built: cli/dist/ → cli/dist/skills/
+  return resolveAssetDir(["..", "..", "..", "..", "skills"], ["skills"]);
 }
 
 function patchVideoSrc(
