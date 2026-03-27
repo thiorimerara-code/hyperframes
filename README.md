@@ -18,7 +18,12 @@ Hyperframes is an open-source video rendering framework that lets you create, pr
 ```bash
 npx hyperframes init my-video
 cd my-video
-npx hyperframes dev      # preview in browser
+```
+
+Then open the project with your AI coding agent (Claude Code, Cursor, etc.) — it has HyperFrames skills installed and knows how to create and edit compositions.
+
+```bash
+npx hyperframes dev      # preview in browser (live reload)
 npx hyperframes render   # render to MP4
 ```
 
