@@ -133,6 +133,82 @@ export async function pageScreenshotCapture(page: Page, options: CaptureOptions)
   return Buffer.from(result.data, "base64");
 }
 
+/**
+ * Capture a screenshot with transparent background (PNG + alpha channel).
+ *
+ * Used in the two-pass HDR compositing pipeline — captures DOM content
+ * (text, graphics, SDR overlays) with transparency where the background shows,
+ * so it can be overlaid on top of native HDR video frames in FFmpeg.
+ *
+ * Sets and restores the background color override on every call. For sessions
+ * that capture many frames, prefer calling initTransparentBackground() once
+ * at session init, then captureAlphaPng() per frame to avoid the 2× CDP
+ * round-trip overhead.
+ */
+export async function captureScreenshotWithAlpha(
+  page: Page,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  const client = await getCdpSession(page);
+  // Force transparent background so the screenshot has a real alpha channel
+  await client.send("Emulation.setDefaultBackgroundColorOverride", {
+    color: { r: 0, g: 0, b: 0, a: 0 },
+  });
+  try {
+    const result = await client.send("Page.captureScreenshot", {
+      format: "png",
+      fromSurface: true,
+      captureBeyondViewport: false,
+      optimizeForSpeed: false, // `true` uses a zero-alpha-aware fast path that crushes real alpha values — observed empirically, CDP docs don't spell it out
+      clip: { x: 0, y: 0, width, height, scale: 1 },
+    });
+    return Buffer.from(result.data, "base64");
+  } finally {
+    // Restore opaque background even if captureScreenshot throws, otherwise
+    // subsequent opaque captures keep a transparent background.
+    await client.send("Emulation.setDefaultBackgroundColorOverride", {}).catch(() => {});
+  }
+}
+
+/**
+ * Set the page background to transparent once for a dedicated HDR DOM session.
+ *
+ * Call this once after session initialization. Then use captureAlphaPng() per
+ * frame instead of captureScreenshotWithAlpha() to skip the per-frame CDP
+ * background override round-trips.
+ *
+ * Only use on sessions that are exclusively dedicated to transparent capture
+ * (e.g., the HDR two-pass DOM layer session) — the background will stay
+ * transparent for the lifetime of the session.
+ */
+export async function initTransparentBackground(page: Page): Promise<void> {
+  const client = await getCdpSession(page);
+  await client.send("Emulation.setDefaultBackgroundColorOverride", {
+    color: { r: 0, g: 0, b: 0, a: 0 },
+  });
+}
+
+/**
+ * Capture a transparent-background PNG screenshot without setting the
+ * background color override. Requires initTransparentBackground() to have
+ * been called once on this session.
+ *
+ * Faster than captureScreenshotWithAlpha() for per-frame use in the HDR
+ * two-pass compositing loop.
+ */
+export async function captureAlphaPng(page: Page, width: number, height: number): Promise<Buffer> {
+  const client = await getCdpSession(page);
+  const result = await client.send("Page.captureScreenshot", {
+    format: "png",
+    fromSurface: true,
+    captureBeyondViewport: false,
+    optimizeForSpeed: false, // must be false to preserve alpha
+    clip: { x: 0, y: 0, width, height, scale: 1 },
+  });
+  return Buffer.from(result.data, "base64");
+}
+
 export async function injectVideoFramesBatch(
   page: Page,
   updates: Array<{ videoId: string; dataUri: string }>,
@@ -160,16 +236,11 @@ export async function injectVideoFramesBatch(
         }
         if (!img) continue;
 
-        if (!sourceIsStatic) {
-          img.style.position = computedStyle.position;
-          img.style.width = computedStyle.width;
-          img.style.height = computedStyle.height;
-          img.style.top = computedStyle.top;
-          img.style.left = computedStyle.left;
-          img.style.right = computedStyle.right;
-          img.style.bottom = computedStyle.bottom;
-          img.style.inset = computedStyle.inset;
-        } else {
+        // Always use absolute positioning so the <img> overlays the <video>
+        // instead of flowing below it. With position:relative, both elements
+        // stack vertically — the <img> lands below the video and gets clipped
+        // by any overflow:hidden ancestor (e.g., border-radius wrappers).
+        {
           const videoRect = video.getBoundingClientRect();
           const offsetLeft = Number.isFinite(video.offsetLeft) ? video.offsetLeft : 0;
           const offsetTop = Number.isFinite(video.offsetTop) ? video.offsetTop : 0;
@@ -235,14 +306,28 @@ export async function syncVideoFrameVisibility(
     const active = new Set(ids);
     const videos = Array.from(document.querySelectorAll("video[data-start]")) as HTMLVideoElement[];
     for (const video of videos) {
-      if (active.has(video.id)) continue;
-      video.style.removeProperty("display");
-      video.style.setProperty("visibility", "hidden", "important");
-      video.style.setProperty("opacity", "0", "important");
-      video.style.setProperty("pointer-events", "none", "important");
       const img = video.nextElementSibling as HTMLElement | null;
-      if (img && img.classList.contains("__render_frame__")) {
-        img.style.visibility = "hidden";
+      const hasImg = img && img.classList.contains("__render_frame__");
+      if (active.has(video.id)) {
+        // Active video: show injected <img>, hide native <video>.
+        // Do NOT clobber inline opacity here — GSAP-controlled opacity must
+        // survive until injectVideoFramesBatch reads it via getComputedStyle.
+        // visibility:hidden alone hides the native element without affecting
+        // its computed opacity.
+        video.style.setProperty("visibility", "hidden", "important");
+        video.style.setProperty("pointer-events", "none", "important");
+        if (hasImg) {
+          img.style.visibility = "visible";
+        }
+      } else {
+        // Inactive video: hide both
+        video.style.removeProperty("display");
+        video.style.setProperty("visibility", "hidden", "important");
+        video.style.setProperty("opacity", "0", "important");
+        video.style.setProperty("pointer-events", "none", "important");
+        if (hasImg) {
+          img.style.visibility = "hidden";
+        }
       }
     }
   }, activeVideoIds);
