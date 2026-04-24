@@ -115,7 +115,7 @@ The more specific your prompt, the better the output. Include palette, fonts, du
 
 - **In-pane preview** — scrubbing is unreliable in Claude Design's iframe sandbox. Download and use `npx hyperframes preview` locally for reliable playback.
 - **No linting** — Claude Design can't run `npx hyperframes lint`. The template-first skeletons handle structural validity, but the self-review checklist is the only QA before download.
-- **No shaders on vertical** — HyperShader's WebGL canvas is hardcoded to 1920x1080. Vertical (1080x1920) compositions use hard cuts only.
+- **Shaders work at any aspect ratio** — vertical (1080x1920), landscape (1920x1080), and square (1080x1080) all supported. HyperShader reads dimensions from `data-width`/`data-height` on the composition root.
 - **3 fetch limit** — Claude Design limits web fetches per turn. All critical rules are inlined in the skill; external references are for edge cases only.
 - **Seeking backwards** — scrubbing backwards in the in-pane preview can show blank frames (async capture race condition). Forward seeking usually works.
 

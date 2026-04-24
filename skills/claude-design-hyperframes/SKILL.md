@@ -524,7 +524,7 @@ npx hyperframes render index.html -o output.mp4
 
 ### Skeleton A -- Social Reel (1080x1920, 15s, 6 scenes)
 
-All hard cuts. **No shader transitions** -- HyperShader's WebGL canvas is hardcoded to 1920x1080. It does not support vertical (1080x1920) compositions. Shaders render at the wrong aspect ratio and distort. For vertical video, rely on entrance animations and mid-scene activity to carry the energy.
+Transition plan: s1→s2 hard cut, s2→s3 hard cut, **s3→s4 SHADER** (hero reveal), s4→s5 hard cut, s5→s6 hard cut. One shader at the midpoint.
 
 ```html
 <!doctype html>
@@ -534,7 +534,7 @@ All hard cuts. **No shader transitions** -- HyperShader's WebGL canvas is hardco
     <meta name="viewport" content="width=1080, height=1920" />
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@hyperframes/core/dist/hyperframe.runtime.iife.js"></script>
-    <!-- No shader-transitions script — shaders are hardcoded to 1920x1080 and don't support vertical -->
+    <script src="https://cdn.jsdelivr.net/npm/@hyperframes/shader-transitions/dist/index.global.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- FILL: Google Fonts link for your chosen typefaces -->
@@ -638,8 +638,6 @@ All hard cuts. **No shader transitions** -- HyperShader's WebGL canvas is hardco
       data-start="0"
       data-duration="15"
     >
-      <!-- ALL HARD CUTS — no shaders on vertical. Entrance animations carry the energy. -->
-
       <!-- SCENE 1 -- visible from t=0 -->
       <div class="scene clip" id="s1" data-start="0" data-duration="2.5" data-track-index="0">
         <div class="grain"></div>
@@ -662,31 +660,33 @@ All hard cuts. **No shader transitions** -- HyperShader's WebGL canvas is hardco
         </div>
       </div>
 
+      <!-- SCENE 3 -- SHADER ANCHOR (opacity:0, HyperShader manages) -->
       <div
         class="scene clip"
         id="s3"
         data-start="5"
         data-duration="2.5"
         data-track-index="0"
-        style="visibility:hidden;"
+        style="opacity:0;"
       >
         <div class="grain"></div>
         <div class="scene-content">
-          <!-- FILL: Scene 3 — feature -->
+          <!-- FILL: Scene 3 — build-up before hero -->
         </div>
       </div>
 
+      <!-- SCENE 4 -- SHADER ANCHOR (opacity:0, HyperShader manages) -->
       <div
         class="scene clip"
         id="s4"
         data-start="7.5"
         data-duration="2.5"
         data-track-index="0"
-        style="visibility:hidden;"
+        style="opacity:0;"
       >
         <div class="grain"></div>
         <div class="scene-content">
-          <!-- FILL: Scene 4 — hero / key stat -->
+          <!-- FILL: Scene 4 — hero / key stat (shader reveals this) -->
         </div>
       </div>
 
@@ -723,14 +723,12 @@ All hard cuts. **No shader transitions** -- HyperShader's WebGL canvas is hardco
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
 
-      // --- Scene toggles (REQUIRED — use autoAlpha, not visibility) ---
+      // --- Non-anchor scene toggles (REQUIRED — use autoAlpha) ---
       tl.set("#s1", { autoAlpha: 0 }, 2.5);
       tl.set("#s2", { autoAlpha: 1 }, 2.5);
       tl.set("#s2", { autoAlpha: 0 }, 5.0);
-      tl.set("#s3", { autoAlpha: 1 }, 5.0);
-      tl.set("#s3", { autoAlpha: 0 }, 7.5);
-      tl.set("#s4", { autoAlpha: 1 }, 7.5);
-      tl.set("#s4", { autoAlpha: 0 }, 10.0);
+      // s3, s4 are shader anchors — HyperShader manages their opacity
+      tl.set("#s3", { opacity: 1 }, 5.0); // first anchor must be explicitly shown
       tl.set("#s5", { autoAlpha: 1 }, 10.0);
       tl.set("#s5", { autoAlpha: 0 }, 12.5);
       tl.set("#s6", { autoAlpha: 1 }, 12.5);
@@ -741,10 +739,10 @@ All hard cuts. **No shader transitions** -- HyperShader's WebGL canvas is hardco
       // === SCENE 2 (2.5-5s) ===
       // FILL: entrance + mid-scene activity
 
-      // === SCENE 3 (5-7.5s) ===
+      // === SCENE 3 (5-7.5s) — SHADER ANCHOR, no exit tweens ===
       // FILL: entrance + mid-scene activity
 
-      // === SCENE 4 (7.5-10s) — hero ===
+      // === SCENE 4 (7.5-10s) — hero (shader reveals this) ===
       // FILL: entrance + mid-scene activity
 
       // === SCENE 5 (10-12.5s) — proof ===
@@ -753,7 +751,15 @@ All hard cuts. **No shader transitions** -- HyperShader's WebGL canvas is hardco
       // === SCENE 6 (12.5-15s) — CTA, final scene, exit OK ===
       // FILL: entrance + mid-scene activity + optional exit
 
-      // No HyperShader — vertical compositions use hard cuts only.
+      // --- Shader: 1 transition at the hero reveal ---
+      window.HyperShader.init({
+        bgColor:
+          getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#0a0a0d",
+        scenes: ["s3", "s4"],
+        timeline: tl,
+        transitions: [{ time: 7.25, shader: "cinematic-zoom", duration: 0.5 }],
+      });
+
       window.__timelines["main"] = tl;
     </script>
   </body>
