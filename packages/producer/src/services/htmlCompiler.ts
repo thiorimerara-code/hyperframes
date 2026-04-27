@@ -650,16 +650,12 @@ function inlineSubCompositions(
     );
 
     if (innerRoot) {
-      const innerCompId = innerRoot.getAttribute("data-composition-id");
       const innerW = innerRoot.getAttribute("data-width");
       const innerH = innerRoot.getAttribute("data-height");
-      if (innerCompId && !host.getAttribute("data-composition-id")) {
-        host.setAttribute("data-composition-id", innerCompId);
-      }
       if (innerW && !host.getAttribute("data-width")) host.setAttribute("data-width", innerW);
       if (innerH && !host.getAttribute("data-height")) host.setAttribute("data-height", innerH);
       innerRoot.querySelectorAll("style, script").forEach((el) => el.remove());
-      host.innerHTML = innerRoot.innerHTML || "";
+      host.innerHTML = compId ? innerRoot.innerHTML || "" : innerRoot.outerHTML || "";
     } else {
       contentDoc.querySelectorAll("style, script").forEach((el) => el.remove());
       host.innerHTML = contentDoc.toString();

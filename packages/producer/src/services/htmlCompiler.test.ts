@@ -657,8 +657,8 @@ describe("template-wrapped sub-composition media offsets", () => {
     const { document } = parseHTML(compiled.html);
     const host = document.querySelector("#scene-host");
 
-    expect(host?.getAttribute("data-composition-id")).toBe("scene");
-    expect(host?.querySelector(".title")?.textContent).toBe("Scene");
+    expect(host?.getAttribute("data-composition-id")).toBeNull();
+    expect(host?.querySelector('[data-composition-id="scene"] .title')?.textContent).toBe("Scene");
     expect(compiled.html).toContain('var __hfCompId = "scene";');
   });
 });

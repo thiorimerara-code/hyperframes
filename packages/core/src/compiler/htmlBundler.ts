@@ -502,15 +502,12 @@ export async function bundleToSingleHtml(
     );
 
     if (innerRoot) {
-      const innerCompId = innerRoot.getAttribute("data-composition-id");
       const innerW = innerRoot.getAttribute("data-width");
       const innerH = innerRoot.getAttribute("data-height");
-      if (innerCompId && !hostEl.getAttribute("data-composition-id"))
-        hostEl.setAttribute("data-composition-id", innerCompId);
       if (innerW && !hostEl.getAttribute("data-width")) hostEl.setAttribute("data-width", innerW);
       if (innerH && !hostEl.getAttribute("data-height")) hostEl.setAttribute("data-height", innerH);
       for (const child of [...innerRoot.querySelectorAll("style, script")]) child.remove();
-      hostEl.innerHTML = innerRoot.innerHTML || "";
+      hostEl.innerHTML = compId ? innerRoot.innerHTML || "" : innerRoot.outerHTML || "";
     } else {
       for (const child of [...contentDoc.querySelectorAll("style, script")]) child.remove();
       hostEl.innerHTML = contentDoc.body.innerHTML || "";
