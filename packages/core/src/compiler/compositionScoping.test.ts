@@ -41,15 +41,26 @@ body { margin: 0; }
     expect(wrapped).not.toContain("requestAnimationFrame");
   });
 
+  it("normalizes root timing attributes when scoping selectors", () => {
+    const scoped = scopeCssToComposition(
+      '[data-composition-id="scene"][data-start="0"] .title { opacity: 0; }',
+      "scene",
+    );
+
+    expect(scoped).toContain('[data-composition-id="scene"] .title { opacity: 0; }');
+    expect(scoped).not.toContain('[data-start="0"]');
+  });
+
   it("executes document and GSAP selectors inside the composition root", () => {
     const { document } = parseHTML(`
-      <div data-composition-id="scene"><h1 class="title">Scene</h1></div>
+      <div data-composition-id="scene" data-start="intro"><h1 class="title">Scene</h1></div>
       <div data-composition-id="other"><h1 class="title">Other</h1></div>
     `);
     const gsapTargets: string[][] = [];
     const fakeWindow = {
       document,
       __selectedTitle: "",
+      __selectedRootTitle: "",
       __timelines: {},
       gsap: {
         timeline: () => ({
@@ -64,7 +75,9 @@ body { margin: 0; }
       `
 const tl = gsap.timeline({ paused: true });
 tl.to('.title', { opacity: 1 });
+tl.to('[data-composition-id="scene"][data-start="0"] .title', { opacity: 1 });
 window.__selectedTitle = document.querySelector('.title')?.textContent || '';
+window.__selectedRootTitle = document.querySelector('[data-composition-id="scene"][data-start="0"] .title')?.textContent || '';
 window.__timelines.scene = tl;
 `,
       "scene",
@@ -73,6 +86,7 @@ window.__timelines.scene = tl;
     new Function("window", "gsap", wrapped)(fakeWindow, fakeWindow.gsap);
 
     expect(fakeWindow.__selectedTitle).toBe("Scene");
-    expect(gsapTargets).toEqual([["Scene"]]);
+    expect(fakeWindow.__selectedRootTitle).toBe("Scene");
+    expect(gsapTargets).toEqual([["Scene"], ["Scene"]]);
   });
 });

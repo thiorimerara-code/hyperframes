@@ -51,11 +51,16 @@ describe("loadExternalCompositions", () => {
     await loadExternalCompositions({ ...defaultParams });
 
     const mountedParagraph = host.querySelector("p");
-    const innerRoot = host.firstElementChild;
 
     expect(mountedParagraph).toBeTruthy();
     expect(mountedParagraph?.textContent).toBe("Hello World");
-    expect(innerRoot?.getAttribute("data-composition-id")).toBe("scene-1");
+    expect(host.getAttribute("data-width")).toBe("1920");
+    expect(host.getAttribute("data-height")).toBe("1080");
+    expect(
+      Array.from(host.children).some(
+        (child) => child.getAttribute("data-composition-id") === "scene-1",
+      ),
+    ).toBe(false);
   });
 
   it("injects styles into document head", async () => {
@@ -230,6 +235,12 @@ describe("loadExternalCompositions", () => {
     expect(injectedStyles[0]?.textContent).toContain('[data-composition-id="scene"] .title');
     expect(injectedScripts[0]?.textContent).toContain('var __hfCompId = "scene";');
     expect(injectedScripts[0]?.textContent).toContain("new Proxy(window.document");
+    expect(host.querySelector(".title")?.textContent).toBe("Scene");
+    expect(
+      Array.from(host.children).some(
+        (child) => child.getAttribute("data-composition-id") === "scene",
+      ),
+    ).toBe(false);
   });
 
   it("handles multiple compositions in parallel", async () => {

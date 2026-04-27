@@ -198,16 +198,13 @@ async function mountCompositionContent(params: {
     const heightRaw = innerRoot.getAttribute("data-height");
     const widthPx = params.parseDimensionPx(widthRaw);
     const heightPx = params.parseDimensionPx(heightRaw);
-    imported.style.position = "relative";
-    imported.style.width = widthPx || "100%";
-    imported.style.height = heightPx || "100%";
-    if (widthPx) imported.style.setProperty("--comp-width", widthPx);
-    if (heightPx) imported.style.setProperty("--comp-height", heightPx);
     if (widthRaw) params.host.setAttribute("data-width", widthRaw);
     if (heightRaw) params.host.setAttribute("data-height", heightRaw);
     if (widthPx && params.host instanceof HTMLElement) params.host.style.width = widthPx;
     if (heightPx && params.host instanceof HTMLElement) params.host.style.height = heightPx;
-    params.host.appendChild(imported);
+    while (imported.firstChild) {
+      params.host.appendChild(imported.firstChild);
+    }
   } else if (params.hasTemplate) {
     params.host.appendChild(document.importNode(contentNode, true));
   } else {

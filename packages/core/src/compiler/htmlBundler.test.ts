@@ -2,6 +2,7 @@
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseHTML } from "linkedom";
 import { describe, it, expect } from "vitest";
 import { bundleToSingleHtml } from "./htmlBundler";
 
@@ -196,7 +197,7 @@ describe("bundleToSingleHtml", () => {
     expect(bundled).toContain("Sized content");
   });
 
-  it("preserves the sub-composition root when inlining external compositions", async () => {
+  it("flattens the sub-composition root onto the host when inlining external compositions", async () => {
     const dir = makeTempProject({
       "index.html": `<!doctype html>
 <html><head></head><body>
@@ -225,9 +226,20 @@ describe("bundleToSingleHtml", () => {
 
     const bundled = await bundleToSingleHtml(dir);
 
-    expect(bundled).toContain('id="scene-host"');
-    expect(bundled).toContain('data-composition-id="scene" data-start="0"');
-    expect(bundled).toContain('[data-composition-id="scene"][data-start="0"]');
+    const { document } = parseHTML(bundled);
+    const host = document.querySelector("#scene-host");
+
+    expect(host?.getAttribute("data-composition-id")).toBe("scene");
+    expect(host?.getAttribute("data-start")).toBe("intro");
+    expect(host?.getAttribute("data-width")).toBe("1920");
+    expect(host?.querySelector(".title")?.textContent).toBe("Scene");
+    expect(
+      Array.from(host?.children ?? []).some(
+        (child) => child.getAttribute("data-composition-id") === "scene",
+      ),
+    ).toBe(false);
+    expect(bundled).toContain('[data-composition-id="scene"] .title');
+    expect(bundled).toContain("__hfNormalizeSelector");
   });
 
   it("scopes external sub-composition styles and classic scripts", async () => {

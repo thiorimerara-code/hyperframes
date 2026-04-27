@@ -2,6 +2,7 @@ import { describe, expect, it, mock, beforeAll } from "bun:test";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseHTML } from "linkedom";
 import {
   collectExternalAssets,
   compileForRender,
@@ -598,7 +599,7 @@ describe("template-wrapped sub-composition media offsets", () => {
     });
   });
 
-  it("preserves the sub-composition root in compiled render HTML", async () => {
+  it("flattens the sub-composition root onto the host in compiled render HTML", async () => {
     const { projectDir, indexPath } = writeTemplateWrappedProject(
       'data-start="20" data-duration="6" data-width="640" data-height="360"',
       'data-start="1.5" data-duration="4"',
@@ -606,9 +607,20 @@ describe("template-wrapped sub-composition media offsets", () => {
 
     const compiled = await compileForRender(projectDir, indexPath, projectDir);
 
-    expect(compiled.html).toContain('id="scene-host"');
-    expect(compiled.html).toContain('data-composition-id="scene" data-start="0"');
+    const { document } = parseHTML(compiled.html);
+    const host = document.querySelector("#scene-host");
+
+    expect(host?.getAttribute("data-composition-id")).toBe("scene");
+    expect(host?.getAttribute("data-start")).toBe("20");
+    expect(host?.getAttribute("data-width")).toBe("640");
+    expect(host?.querySelector(".title")?.textContent).toBe("Scene");
+    expect(
+      Array.from(host?.children ?? []).some(
+        (child) => child.getAttribute("data-composition-id") === "scene",
+      ),
+    ).toBe(false);
     expect(compiled.html).toContain('[data-composition-id="scene"] .title');
     expect(compiled.html).toContain("new Proxy(window.document");
+    expect(compiled.html).toContain("__hfNormalizeSelector");
   });
 });

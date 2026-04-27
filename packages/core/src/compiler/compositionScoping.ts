@@ -138,16 +138,34 @@ function splitSelectorList(selectorText: string): string[] {
 }
 
 function scopeSelector(selector: string, scope: string, compositionId: string): string {
-  const trimmed = selector.trim();
+  const selectorWithoutRootTiming = normalizeCompositionRootSelector(
+    selector,
+    scope,
+    compositionId,
+  );
+  const trimmed = selectorWithoutRootTiming.trim();
   if (!trimmed) return selector;
   if (/^(html|body|:root|\*)$/i.test(trimmed)) return selector;
   const compositionIdPattern = new RegExp(
     `data-composition-id\\s*=\\s*(["'])${escapeRegExp(compositionId)}\\1`,
   );
-  if (compositionIdPattern.test(trimmed)) return selector;
-  const leading = selector.match(/^\s*/)?.[0] ?? "";
-  const trailing = selector.match(/\s*$/)?.[0] ?? "";
+  if (compositionIdPattern.test(trimmed)) return selectorWithoutRootTiming;
+  const leading = selectorWithoutRootTiming.match(/^\s*/)?.[0] ?? "";
+  const trailing = selectorWithoutRootTiming.match(/\s*$/)?.[0] ?? "";
   return `${leading}${scope} ${trimmed}${trailing}`;
+}
+
+function normalizeCompositionRootSelector(
+  selector: string,
+  scope: string,
+  compositionId: string,
+): string {
+  const quotedCompId = escapeRegExp(compositionId);
+  const compAttr = String.raw`\[\s*data-composition-id\s*=\s*(?:"${quotedCompId}"|'${quotedCompId}')\s*\]`;
+  const timingAttr = String.raw`\s*\[\s*data-(?:start|duration)\s*=\s*(?:"[^"]*"|'[^']*')\s*\]`;
+  return selector
+    .replace(new RegExp(`${compAttr}(?:${timingAttr})+`, "g"), scope)
+    .replace(new RegExp(`(?:${timingAttr})+${compAttr}`, "g"), scope);
 }
 
 function scopeSelectorList(selectorText: string, scope: string, compositionId: string): string {
@@ -213,6 +231,13 @@ export function wrapScopedCompositionScript(
 ): string {
   const compositionIdLiteral = JSON.stringify(compositionId);
   const errorLabelLiteral = JSON.stringify(errorLabel);
+  const escapedCompositionId = escapeRegExp(compositionId);
+  const rootSelectorPatternLiteral = JSON.stringify(
+    String.raw`\[\s*data-composition-id\s*=\s*(?:"${escapedCompositionId}"|'${escapedCompositionId}')\s*\]`,
+  );
+  const timingSelectorPatternLiteral = JSON.stringify(
+    String.raw`\s*\[\s*data-(?:start|duration)\s*=\s*(?:"[^"]*"|'[^']*')\s*\]`,
+  );
   return `(function(){
   var __hfCompId = ${compositionIdLiteral};
   var __hfErrorLabel = ${errorLabelLiteral};
@@ -223,6 +248,14 @@ export function wrapScopedCompositionScript(
     ? '[data-composition-id="' + __hfEscapeAttr(__hfCompId) + '"]'
     : "";
   var __hfRoot = null;
+  var __hfRootSelectorPattern = ${rootSelectorPatternLiteral};
+  var __hfTimingSelectorPattern = ${timingSelectorPatternLiteral};
+  var __hfNormalizeSelector = function(selector) {
+    if (!__hfCompId || typeof selector !== "string") return selector;
+    return selector
+      .replace(new RegExp(__hfRootSelectorPattern + '(?:' + __hfTimingSelectorPattern + ')+', 'g'), __hfRootSelector)
+      .replace(new RegExp('(?:' + __hfTimingSelectorPattern + ')+' + __hfRootSelectorPattern, 'g'), __hfRootSelector);
+  };
   var __hfFindRoot = function() {
     if (!__hfRoot && __hfRootSelector) {
       __hfRoot = window.document.querySelector(__hfRootSelector);
@@ -238,7 +271,7 @@ export function wrapScopedCompositionScript(
     if (!root || typeof selector !== "string") {
       return window.document.querySelectorAll(selector);
     }
-    return Array.prototype.filter.call(window.document.querySelectorAll(selector), function(node) {
+    return Array.prototype.filter.call(window.document.querySelectorAll(__hfNormalizeSelector(selector)), function(node) {
       return __hfContains(node);
     });
   };

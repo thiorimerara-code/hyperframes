@@ -3,11 +3,7 @@ import { join, resolve, isAbsolute, sep } from "path";
 import { parseHTML } from "linkedom";
 import { transformSync } from "esbuild";
 import { compileHtml, type MediaDurationProber } from "./htmlCompiler";
-import {
-  rewriteAssetPaths,
-  rewriteCssAssetUrls,
-  rewriteInlineStyleAssetUrls,
-} from "./rewriteSubCompPaths";
+import { rewriteAssetPaths, rewriteCssAssetUrls } from "./rewriteSubCompPaths";
 import { scopeCssToComposition, wrapScopedCompositionScript } from "./compositionScoping";
 import { validateHyperframeHtmlContract } from "./staticGuard";
 
@@ -514,7 +510,7 @@ export async function bundleToSingleHtml(
       if (innerW && !hostEl.getAttribute("data-width")) hostEl.setAttribute("data-width", innerW);
       if (innerH && !hostEl.getAttribute("data-height")) hostEl.setAttribute("data-height", innerH);
       for (const child of [...innerRoot.querySelectorAll("style, script")]) child.remove();
-      hostEl.innerHTML = innerRoot.outerHTML || "";
+      hostEl.innerHTML = innerRoot.innerHTML || "";
     } else {
       for (const child of [...contentDoc.querySelectorAll("style, script")]) child.remove();
       hostEl.innerHTML = contentDoc.body.innerHTML || "";
@@ -578,8 +574,7 @@ export async function bundleToSingleHtml(
       if (innerW && !host.getAttribute("data-width")) host.setAttribute("data-width", innerW);
       if (innerH && !host.getAttribute("data-height")) host.setAttribute("data-height", innerH);
 
-      // Preserve the inner composition root so bundled previews match the runtime loader.
-      host.innerHTML = innerRoot.outerHTML || "";
+      host.innerHTML = innerRoot.innerHTML || "";
     } else {
       // No matching inner root — inject all template content directly
       for (const styleEl of [...innerDoc.querySelectorAll("style")]) {

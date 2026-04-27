@@ -655,23 +655,13 @@ function inlineSubCompositions(
       if (innerW && !host.getAttribute("data-width")) host.setAttribute("data-width", innerW);
       if (innerH && !host.getAttribute("data-height")) host.setAttribute("data-height", innerH);
       innerRoot.querySelectorAll("style, script").forEach((el) => el.remove());
-      host.innerHTML = innerRoot.outerHTML || "";
+      host.innerHTML = innerRoot.innerHTML || "";
     } else {
       contentDoc.querySelectorAll("style, script").forEach((el) => el.remove());
       host.innerHTML = contentDoc.toString();
     }
 
     host.removeAttribute("data-composition-src");
-
-    // Propagate data-start from the host element to the inserted inner composition
-    // node so runtime timeline nesting resolves the correct start offset.
-    const hostDataStart = host.getAttribute("data-start");
-    if (hostDataStart != null) {
-      const innerComp = host.querySelector("[data-composition-id]");
-      if (innerComp && !innerComp.getAttribute("data-start")) {
-        innerComp.setAttribute("data-start", hostDataStart);
-      }
-    }
 
     // Set explicit pixel dimensions on the host element so children using
     // width/height: 100% resolve correctly. The runtime does this
