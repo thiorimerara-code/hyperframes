@@ -213,7 +213,8 @@ export interface RenderConfig {
    * Output container format. Defaults to `"mp4"`; existing renders are
    * unaffected unless this field is set explicitly.
    *
-   * - `"mp4"`: H.264 (or H.265 + HDR10 when `hdr: true`). Opaque. The
+   * - `"mp4"`: H.264 by default, or H.265 + HDR10 when HDR auto-detect
+   *   engages or `hdrMode: "force-hdr"` is set. Opaque. The
    *   default streaming/social deliverable. Faststart is applied so the
    *   `moov` atom sits at the file start and the file plays from a
    *   partial download.
@@ -256,8 +257,12 @@ export interface RenderConfig {
   crf?: number;
   /** Target video bitrate (e.g. "10M"). Mutually exclusive with `crf`. */
   videoBitrate?: string;
-  /** Enable HDR color space probing on video/image sources. */
-  hdr?: boolean;
+  /** HDR rendering mode.
+   * - `auto` (default): probe sources; enable HDR if any HDR content is found.
+   * - `force-hdr`: enable HDR even on SDR-only compositions (falls back to HLG transfer).
+   * - `force-sdr`: skip probing entirely; always render SDR.
+   */
+  hdrMode?: "auto" | "force-hdr" | "force-sdr";
 }
 
 export interface RenderPerfSummary {
@@ -1827,11 +1832,11 @@ export async function executeRenderJob(
 
     // Probe ORIGINAL color spaces before extraction (which may convert SDR→HDR).
     // This is needed to identify which videos are natively HDR vs converted-SDR
-    // for the two-pass compositing path. Gated by --hdr flag to avoid ffprobe
-    // overhead on SDR-only compositions.
+    // for the two-pass compositing path. Skipped only in force-sdr mode to
+    // avoid ffprobe overhead when the user has explicitly opted out.
     const nativeHdrVideoIds = new Set<string>();
     const videoTransfers = new Map<string, HdrTransfer>();
-    if (job.config.hdr && composition.videos.length > 0) {
+    if (job.config.hdrMode !== "force-sdr" && composition.videos.length > 0) {
       await Promise.all(
         composition.videos.map(async (v) => {
           let videoPath = v.src;
@@ -1853,12 +1858,14 @@ export async function executeRenderJob(
 
     // Probe images for HDR color spaces (16-bit PNGs tagged BT.2020 PQ/HLG).
     // Mirrors the video probe loop above so image-only compositions can
-    // trigger HDR output without any video sources present.
+    // trigger HDR output without any video sources present. Skipped only in
+    // force-sdr mode to avoid ffprobe overhead when the user has explicitly
+    // opted out.
     const nativeHdrImageIds = new Set<string>();
     const imageTransfers = new Map<string, HdrTransfer>();
     const hdrImageSrcPaths = new Map<string, string>();
     const imageColorSpaces: (VideoColorSpace | null)[] = [];
-    if (job.config.hdr && composition.images.length > 0) {
+    if (job.config.hdrMode !== "force-sdr" && composition.images.length > 0) {
       const probed = await Promise.all(
         composition.images.map(async (img) => {
           let imgPath = img.src;
@@ -1922,34 +1929,67 @@ export async function executeRenderJob(
     }
 
     // ── HDR auto-detection ──────────────────────────────────────────────
-    // When --hdr is set, analyze probed video AND image color spaces.
-    // If any HDR sources are found, output uses H.265 10-bit with the
-    // dominant transfer (PQ if any PQ source is present, otherwise HLG).
-    // Image-only compositions can trigger HDR output without any video.
+    // Analyze probed video AND image color spaces. In auto mode, any HDR
+    // source enables HDR output. force-hdr always enables HDR, and force-sdr
+    // always disables it. Image-only compositions can trigger HDR output
+    // without any video.
     let effectiveHdr: { transfer: HdrTransfer } | undefined;
-    if (job.config.hdr) {
+    let forcedHdrWithoutSources = false;
+    {
+      const hdrMode = job.config.hdrMode ?? "auto";
       const videoColorSpaces = (extractionResult?.extracted ?? []).map(
         (ext) => ext.metadata.colorSpace,
       );
       const allColorSpaces = [...videoColorSpaces, ...imageColorSpaces];
-      if (allColorSpaces.length > 0) {
-        const info = analyzeCompositionHdr(allColorSpaces);
-        if (info.hasHdr && info.dominantTransfer) {
+      const info = allColorSpaces.length > 0 ? analyzeCompositionHdr(allColorSpaces) : null;
+
+      if (hdrMode === "force-sdr") {
+        effectiveHdr = undefined;
+      } else if (hdrMode === "force-hdr") {
+        if (info?.hasHdr && info.dominantTransfer) {
+          effectiveHdr = { transfer: info.dominantTransfer };
+        } else {
+          effectiveHdr = { transfer: "hlg" };
+          forcedHdrWithoutSources = true;
+        }
+      } else {
+        if (info?.hasHdr && info.dominantTransfer) {
           effectiveHdr = { transfer: info.dominantTransfer };
         }
       }
     }
     if (effectiveHdr && outputFormat !== "mp4") {
+      const hdrSourceReason = forcedHdrWithoutSources
+        ? "HDR was forced without detected HDR sources"
+        : "HDR source detected";
       log.warn(
-        `[Render] HDR source detected but format is "${outputFormat}" — falling back to SDR. ` +
+        `[Render] ${hdrSourceReason}, but format is "${outputFormat}" — falling back to SDR. ` +
           `HDR + alpha is not supported. Use --format mp4 for HDR10 output.`,
       );
       effectiveHdr = undefined;
     }
-    if (effectiveHdr) {
-      log.info(
-        `[Render] HDR source detected — output: ${effectiveHdr.transfer.toUpperCase()} (BT.2020, 10-bit H.265)`,
-      );
+    {
+      const hdrMode = job.config.hdrMode ?? "auto";
+      if (forcedHdrWithoutSources) {
+        log.warn(
+          "[Render] HDR forced by --hdr flag, but no HDR sources were detected — defaulting to HLG. SDR-only compositions may look perceptually wrong on HDR displays.",
+        );
+      }
+      if (effectiveHdr) {
+        const reason =
+          hdrMode === "force-hdr"
+            ? forcedHdrWithoutSources
+              ? "forced by --hdr flag (no HDR sources detected — defaulting to HLG)"
+              : "forced by --hdr flag"
+            : "auto-detected from source(s)";
+        log.info(
+          `[Render] HDR ${reason} — output: ${effectiveHdr.transfer.toUpperCase()} (BT.2020, 10-bit H.265)`,
+        );
+      } else if (hdrMode === "force-sdr") {
+        log.info("[Render] SDR forced by --sdr flag");
+      } else {
+        log.info("[Render] No HDR sources detected — rendering SDR");
+      }
     }
 
     // ── Stage 3: Audio processing ───────────────────────────────────────
@@ -2139,8 +2179,8 @@ export async function executeRenderJob(
     const videoOnlyPath = join(workDir, `video-only${videoExt}`);
     // Only use the HDR encoder preset when there's HDR content to pass through —
     // either native HDR videos OR native HDR images. For SDR-only compositions,
-    // --hdr is a no-op since H.265 10-bit causes browser color management issues
-    // (orange shift) with no quality benefit.
+    // auto mode stays SDR since H.265 10-bit causes browser color management
+    // issues (orange shift) with no quality benefit.
     const nativeHdrIds = new Set([...nativeHdrVideoIds, ...nativeHdrImageIds]);
     const hasHdrContent = effectiveHdr && nativeHdrIds.size > 0;
     const encoderHdr = hasHdrContent ? effectiveHdr : undefined;
