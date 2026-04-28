@@ -1042,8 +1042,8 @@ export const Timeline = memo(function Timeline({
     [onAssetDrop, onFileDrop],
   );
 
-  const handleWheel = useCallback(
-    (e: React.WheelEvent<HTMLDivElement>) => {
+  const handlePinchWheel = useCallback(
+    (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       const scroll = scrollRef.current;
       if (!scroll || durationRef.current <= 0 || fitPpsRef.current <= 0 || ppsRef.current <= 0) {
@@ -1083,6 +1083,15 @@ export const Timeline = memo(function Timeline({
     },
     [setManualZoomPercent, setZoomMode],
   );
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    scroll.addEventListener("wheel", handlePinchWheel, { passive: false, capture: true });
+    return () => {
+      scroll.removeEventListener("wheel", handlePinchWheel, { capture: true });
+    };
+  }, [handlePinchWheel, timelineReady, elements.length]);
 
   if (!timelineReady || elements.length === 0) {
     return (
@@ -1259,7 +1268,6 @@ export const Timeline = memo(function Timeline({
         onDragOver={handleAssetDragOver}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleAssetDrop}
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
