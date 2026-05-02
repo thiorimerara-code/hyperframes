@@ -204,6 +204,12 @@
               "contributing/release-channels",
               "contributing/testing-local-changes"
             ]
+          },
+          {
+            "group": "Community",
+            "pages": [
+              "community/adopters"
+            ]
           }
         ]
       }
