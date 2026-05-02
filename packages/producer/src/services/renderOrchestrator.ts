@@ -26,12 +26,14 @@ import {
   writeFileSync,
   copyFileSync,
   appendFileSync,
+  symlinkSync,
 } from "fs";
 import { parseHTML } from "linkedom";
 import {
   type EngineConfig,
   resolveConfig,
   extractAllVideoFrames,
+  type ExtractedFrames,
   type ExtractionPhaseBreakdown,
   createFrameLookupTable,
   type VideoElement,
@@ -93,7 +95,7 @@ import {
   type ElementStackingInfo,
   type HfTransitionMeta,
 } from "@hyperframes/engine";
-import { join, dirname, resolve, relative, isAbsolute } from "path";
+import { join, dirname, resolve, relative, isAbsolute, basename } from "path";
 import { randomUUID } from "crypto";
 import { freemem } from "os";
 import { fileURLToPath } from "url";
@@ -683,6 +685,72 @@ export function createCompiledFrameSrcResolver(
       .map((segment) => encodeURIComponent(segment))
       .join("/")}`;
   };
+}
+
+type MaterializedExtractedFrames = Pick<ExtractedFrames, "videoId" | "outputDir" | "framePaths">;
+
+type MaterializePathModule = {
+  resolve: (...segments: string[]) => string;
+  join: (...segments: string[]) => string;
+  dirname: (path: string) => string;
+  basename: (path: string) => string;
+  relative: (from: string, to: string) => string;
+  isAbsolute: (path: string) => boolean;
+};
+
+type MaterializeFileSystem = {
+  existsSync: (path: string) => boolean;
+  mkdirSync: (path: string, options: { recursive: true }) => unknown;
+  symlinkSync: (target: string, path: string) => unknown;
+};
+
+type MaterializeExtractedFramesOptions = {
+  pathModule?: MaterializePathModule;
+  fileSystem?: MaterializeFileSystem;
+};
+
+const materializePathModule: MaterializePathModule = {
+  resolve,
+  join,
+  dirname,
+  basename,
+  relative,
+  isAbsolute,
+};
+
+const materializeFileSystem: MaterializeFileSystem = {
+  existsSync,
+  mkdirSync,
+  symlinkSync,
+};
+
+export function materializeExtractedFramesForCompiledDir(
+  extracted: MaterializedExtractedFrames[],
+  compiledDir: string,
+  options: MaterializeExtractedFramesOptions = {},
+): void {
+  const pathModule = options.pathModule ?? materializePathModule;
+  const fileSystem = options.fileSystem ?? materializeFileSystem;
+  const resolvedCompiledDir = pathModule.resolve(compiledDir);
+  const compiledFrameRoot = pathModule.join(resolvedCompiledDir, "__hyperframes_video_frames");
+
+  for (const ext of extracted) {
+    const resolvedOut = pathModule.resolve(ext.outputDir);
+    if (isPathInside(resolvedOut, resolvedCompiledDir, { pathModule })) continue;
+
+    const linkPath = pathModule.join(compiledFrameRoot, ext.videoId);
+    if (!fileSystem.existsSync(linkPath)) {
+      fileSystem.mkdirSync(pathModule.dirname(linkPath), { recursive: true });
+      fileSystem.symlinkSync(resolvedOut, linkPath);
+    }
+
+    const remapped = new Map<number, string>();
+    for (const [idx, framePath] of ext.framePaths) {
+      remapped.set(idx, pathModule.join(linkPath, pathModule.basename(framePath)));
+    }
+    ext.framePaths = remapped;
+    ext.outputDir = linkPath;
+  }
 }
 
 export function applyRenderModeHints(
@@ -2293,6 +2361,8 @@ export async function executeRenderJob(
         compiledDir,
       );
       assertNotAborted();
+
+      materializeExtractedFramesForCompiledDir(extractionResult.extracted, compiledDir);
 
       if (extractionResult.extracted.length > 0) {
         frameLookup = createFrameLookupTable(composition.videos, extractionResult.extracted);

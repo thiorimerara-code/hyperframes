@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { tmpdir } from "node:os";
-import type { EngineConfig } from "@hyperframes/engine";
+import type { EngineConfig, ExtractedFrames } from "@hyperframes/engine";
 import type { CompiledComposition } from "./htmlCompiler.js";
 
 import {
@@ -18,6 +18,7 @@ import {
   findMissingFrameRanges,
   getNextRetryWorkerCount,
   isRecoverableParallelCaptureError,
+  materializeExtractedFramesForCompiledDir,
   projectBrowserEndToCompositionTimeline,
   resolveRenderWorkerCount,
   selectCaptureCalibrationFrames,
@@ -139,6 +140,91 @@ describe("createCompiledFrameSrcResolver", () => {
     const resolver = createCompiledFrameSrcResolver("/tmp/hf-job/compiled");
 
     expect(resolver("/tmp/hf-job/video-frames/frame_00001.jpg")).toBeNull();
+  });
+
+  it("resolves symlinked cache frames when materialized under compiledDir", () => {
+    const resolver = createCompiledFrameSrcResolver("/tmp/hf-job/compiled");
+
+    expect(resolver("/tmp/hf-job/compiled/__hyperframes_video_frames/vid1/frame_00001.jpg")).toBe(
+      "/__hyperframes_video_frames/vid1/frame_00001.jpg",
+    );
+
+    expect(resolver("/tmp/cache/abc123/frame_00001.jpg")).toBeNull();
+  });
+
+  it("encodes reserved characters in frame path segments", () => {
+    const resolver = createCompiledFrameSrcResolver("/tmp/hf-job/compiled");
+
+    expect(
+      resolver("/tmp/hf-job/compiled/__hyperframes_video_frames/video#1/frame_00001.jpg"),
+    ).toBe("/__hyperframes_video_frames/video%231/frame_00001.jpg");
+
+    expect(
+      resolver("/tmp/hf-job/compiled/__hyperframes_video_frames/video?q=1/frame_00001.jpg"),
+    ).toBe("/__hyperframes_video_frames/video%3Fq%3D1/frame_00001.jpg");
+  });
+});
+
+describe("materializeExtractedFramesForCompiledDir", () => {
+  function createExtractedFrames(
+    outputDir: string,
+    framePath: string,
+  ): Pick<ExtractedFrames, "videoId" | "outputDir" | "framePaths"> {
+    return {
+      videoId: "video-1",
+      outputDir,
+      framePaths: new Map([[0, framePath]]),
+    };
+  }
+
+  it("leaves Windows frame paths already under compiledDir unchanged", () => {
+    const compiledDir = win32.resolve("C:\\compiled");
+    const outputDir = win32.join(compiledDir, "__hyperframes_video_frames", "video-1");
+    const framePath = win32.join(outputDir, "frame_000001.jpg");
+    const extracted = createExtractedFrames(outputDir, framePath);
+
+    materializeExtractedFramesForCompiledDir([extracted], compiledDir, {
+      pathModule: win32,
+      fileSystem: {
+        existsSync: () => {
+          throw new Error("inside compiledDir should not touch the filesystem");
+        },
+        mkdirSync: () => {
+          throw new Error("inside compiledDir should not mkdir");
+        },
+        symlinkSync: () => {
+          throw new Error("inside compiledDir should not symlink");
+        },
+      },
+    });
+
+    expect(extracted.outputDir).toBe(outputDir);
+    expect(extracted.framePaths.get(0)).toBe(framePath);
+  });
+
+  it("remaps Windows cache frames under compiledDir using only the frame basename", () => {
+    const compiledDir = win32.resolve("C:\\compiled");
+    const outputDir = win32.resolve("D:\\cache\\abc123");
+    const framePath = win32.join(outputDir, "frame_000001.jpg");
+    const extracted = createExtractedFrames(outputDir, framePath);
+    const symlinks: Array<{ target: string; path: string }> = [];
+
+    materializeExtractedFramesForCompiledDir([extracted], compiledDir, {
+      pathModule: win32,
+      fileSystem: {
+        existsSync: () => false,
+        mkdirSync: () => undefined,
+        symlinkSync: (target, path) => {
+          symlinks.push({ target, path });
+        },
+      },
+    });
+
+    const linkPath = win32.join(compiledDir, "__hyperframes_video_frames", "video-1");
+    expect(extracted.outputDir).toBe(linkPath);
+    expect(extracted.framePaths.get(0)).toBe(win32.join(linkPath, "frame_000001.jpg"));
+    expect(extracted.framePaths.get(0)).not.toContain(outputDir);
+    expect(symlinks).toEqual([{ target: outputDir, path: linkPath }]);
   });
 });
 
