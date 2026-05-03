@@ -118,7 +118,7 @@ npx hyperframes render --docker                       # byte-identical
 
 **Quality guidance:** `draft` while iterating, `standard` for review, `high` for final delivery.
 
-**Parametrized renders:** declare variables on `<html data-composition-variables='[...]'>` and read them inside the composition with `window.__hyperframes.getVariables()`. Override at render time with `--variables '{"title":"Q4 Report"}'`. Missing keys fall through to declared defaults, so the same composition runs unchanged in dev preview and in production renders. See the `hyperframes` skill for the full pattern.
+**Parametrized renders:** the composition declares its variables on the `<html>` root with `data-composition-variables` (id/type/label/default per entry) and reads them in any script via `window.__hyperframes.getVariables()`. The CLI `--variables '{"title":"Q4 Report"}'` overrides those declared defaults for one render — missing keys fall through, so the same composition runs unchanged in dev preview and in production. (Sub-comp hosts can also override per-instance via `data-variable-values` — see the `hyperframes` skill.)
 
 ## Transcription
 

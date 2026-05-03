@@ -26,7 +26,12 @@ Use `npx hyperframes compositions` to see all compositions in a project.
 
 ## Variables
 
-Declare variables on the composition's `<html>` root, then read them inside any composition script with `window.__hyperframes.getVariables()`. Override per-instance via `data-variable-values` on the host element, or at render time via `npx hyperframes render --variables '{...}'`.
+Two attributes work together:
+
+- **`data-composition-variables`** on the `<html>` root *declares* the variables (id, type, label, default).
+- **`data-variable-values`** on a sub-comp host element *overrides* values for that one instance.
+
+Inside any composition script, `window.__hyperframes.getVariables()` returns the merged result of declarations + overrides. CLI `npx hyperframes render --variables '{...}'` provides a top-level override that layers the same way.
 
 ```html
 <!-- compositions/card.html -->
