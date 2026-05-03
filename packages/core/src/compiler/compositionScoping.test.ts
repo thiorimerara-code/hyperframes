@@ -51,6 +51,76 @@ body { margin: 0; }
     expect(scoped).not.toContain('[data-start="0"]');
   });
 
+  it("exposes a scoped __hyperframes.getVariables that reads __hfVariablesByComp[compId]", () => {
+    const { document } = parseHTML(`<div data-composition-id="card-1"></div>`);
+    const fakeWindow: Record<string, unknown> = {
+      document,
+      __timelines: {},
+      __hfVariablesByComp: {
+        "card-1": { title: "Pro", price: "$29" },
+        "card-2": { title: "Enterprise", price: "Custom" },
+      },
+      __hyperframes: {
+        getVariables: () => ({ title: "TOP-LEVEL-LEAK" }),
+        fitTextFontSize: () => undefined,
+      },
+      __captured: undefined as unknown,
+    };
+    const wrapped = wrapScopedCompositionScript(
+      `window.__captured = __hyperframes.getVariables();`,
+      "card-1",
+    );
+
+    new Function("window", wrapped)(fakeWindow);
+
+    expect(fakeWindow.__captured).toEqual({ title: "Pro", price: "$29" });
+  });
+
+  it("scoped getVariables returns {} when __hfVariablesByComp has no entry for the comp", () => {
+    const { document } = parseHTML(`<div data-composition-id="missing"></div>`);
+    const fakeWindow: Record<string, unknown> = {
+      document,
+      __timelines: {},
+      __hyperframes: {
+        getVariables: () => ({ title: "TOP-LEVEL-LEAK" }),
+        fitTextFontSize: () => undefined,
+      },
+      __captured: undefined as unknown,
+    };
+    const wrapped = wrapScopedCompositionScript(
+      `window.__captured = __hyperframes.getVariables();`,
+      "missing",
+    );
+
+    new Function("window", wrapped)(fakeWindow);
+
+    expect(fakeWindow.__captured).toEqual({});
+  });
+
+  it("scoped getVariables returns a fresh object — mutations don't leak into the shared table", () => {
+    const { document } = parseHTML(`<div data-composition-id="card-1"></div>`);
+    const variablesByComp: Record<string, Record<string, unknown>> = {
+      "card-1": { title: "Pro" },
+    };
+    const fakeWindow: Record<string, unknown> = {
+      document,
+      __timelines: {},
+      __hfVariablesByComp: variablesByComp,
+      __hyperframes: {
+        getVariables: () => ({}),
+        fitTextFontSize: () => undefined,
+      },
+    };
+    const wrapped = wrapScopedCompositionScript(
+      `var v = __hyperframes.getVariables(); v.title = "MUTATED"; v.added = "extra";`,
+      "card-1",
+    );
+
+    new Function("window", wrapped)(fakeWindow);
+
+    expect(variablesByComp["card-1"]).toEqual({ title: "Pro" });
+  });
+
   it("executes document and GSAP selectors inside the composition root", () => {
     const { document } = parseHTML(`
       <div data-composition-id="scene" data-start="intro"><h1 class="title">Scene</h1></div>

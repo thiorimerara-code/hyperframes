@@ -261,11 +261,21 @@ export function wrapScopedCompositionScript(
           return typeof value === "function" ? value.bind(target) : value;
         },
       });
+  var __hfBaseHyperframes = window.__hyperframes;
+  var __hfScopedHyperframes = !__hfBaseHyperframes
+    ? __hfBaseHyperframes
+    : Object.assign({}, __hfBaseHyperframes, {
+        getVariables: function() {
+          var byComp = window.__hfVariablesByComp;
+          var scoped = byComp && __hfCompId ? byComp[__hfCompId] : null;
+          return scoped ? Object.assign({}, scoped) : {};
+        },
+      });
   var __hfRun = function() {
     try {
-      (function(document, gsap, window) {
+      (function(document, gsap, window, __hyperframes) {
 ${source}
-      }).call(window, __hfScopedDocument, __hfScopedGsap, __hfScopedWindow);
+      }).call(window, __hfScopedDocument, __hfScopedGsap, __hfScopedWindow, __hfScopedHyperframes);
     } catch (_err) {
       console.error(__hfErrorLabel, __hfCompId, _err);
     }
