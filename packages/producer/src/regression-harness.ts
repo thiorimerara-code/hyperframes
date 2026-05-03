@@ -36,6 +36,14 @@ type TestMetadata = {
     workers?: number; // Optional: auto-calculates if omitted
     /** Force HDR in the harness; omitted/false preserves historical SDR-only test behavior. */
     hdr?: boolean;
+    /**
+     * Render-time variable overrides, equivalent to `hyperframes render
+     * --variables '<json>'`. Injected as `window.__hfVariables` before any
+     * page script runs so the runtime helper `getVariables()` returns the
+     * merged result of declared defaults (`data-composition-variables`)
+     * and these overrides. Omit when the test doesn't exercise variables.
+     */
+    variables?: Record<string, unknown>;
   };
 };
 
@@ -159,6 +167,12 @@ function validateMetadata(meta: unknown): TestMetadata {
   }
   if (rc.hdr !== undefined && typeof rc.hdr !== "boolean") {
     throw new Error("meta.json: 'renderConfig.hdr' must be a boolean (or omit for false)");
+  }
+  if (
+    rc.variables !== undefined &&
+    (rc.variables === null || typeof rc.variables !== "object" || Array.isArray(rc.variables))
+  ) {
+    throw new Error("meta.json: 'renderConfig.variables' must be a JSON object (or omitted)");
   }
 
   return m as TestMetadata;
@@ -601,6 +615,7 @@ async function runTestSuite(
       useGpu: false,
       debug: false,
       hdrMode: suite.meta.renderConfig.hdr ? "force-hdr" : "force-sdr",
+      variables: suite.meta.renderConfig.variables,
     });
 
     await executeRenderJob(job, tempSrcDir, renderedOutputPath);
