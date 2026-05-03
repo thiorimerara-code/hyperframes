@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const producerState = vi.hoisted(() => ({
   createdJobs: [] as Array<Record<string, unknown>>,
@@ -133,21 +133,31 @@ describe("renderLocal browser GPU config", () => {
 });
 
 describe("parseVariablesArg", () => {
-  it("returns undefined when neither flag is set", async () => {
-    const { parseVariablesArg } = await import("./render.js");
+  let parseVariablesArg: typeof import("./render.js").parseVariablesArg;
+
+  beforeAll(async () => {
+    ({ parseVariablesArg } = await import("./render.js"));
+  });
+
+  function expectErr<T extends { kind: string }>(
+    result: import("./render.js").VariablesParseResult,
+  ): T {
+    if (result.ok) throw new Error(`expected error, got ${JSON.stringify(result.value)}`);
+    return result.error as T;
+  }
+
+  it("returns undefined when neither flag is set", () => {
     expect(parseVariablesArg(undefined, undefined)).toEqual({ ok: true, value: undefined });
   });
 
-  it("parses inline JSON object", async () => {
-    const { parseVariablesArg } = await import("./render.js");
+  it("parses inline JSON object", () => {
     expect(parseVariablesArg('{"title":"Hello","n":3}', undefined)).toEqual({
       ok: true,
       value: { title: "Hello", n: 3 },
     });
   });
 
-  it("parses file JSON via injected reader", async () => {
-    const { parseVariablesArg } = await import("./render.js");
+  it("parses file JSON via injected reader", () => {
     const fakeReader = (path: string) => {
       if (path === "vars.json") return '{"theme":"dark"}';
       throw new Error("unexpected path");
@@ -158,43 +168,40 @@ describe("parseVariablesArg", () => {
     });
   });
 
-  it("rejects when both flags are set", async () => {
-    const { parseVariablesArg } = await import("./render.js");
-    const result = parseVariablesArg('{"a":1}', "vars.json");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.title).toMatch(/Conflicting/);
+  it("rejects when both flags are set", () => {
+    const err = expectErr(parseVariablesArg('{"a":1}', "vars.json"));
+    expect(err).toEqual({ kind: "conflict" });
   });
 
-  it("rejects unparseable JSON with a source-aware title", async () => {
-    const { parseVariablesArg } = await import("./render.js");
-    const inlineFail = parseVariablesArg("{not json", undefined);
-    expect(inlineFail.ok).toBe(false);
-    if (!inlineFail.ok) expect(inlineFail.title).toBe("Invalid JSON in --variables");
-
-    const fileFail = parseVariablesArg(undefined, "x", () => "{not json");
-    expect(fileFail.ok).toBe(false);
-    if (!fileFail.ok) expect(fileFail.title).toBe("Invalid JSON in --variables-file");
-  });
-
-  it("rejects non-object payloads (array, string, null)", async () => {
-    const { parseVariablesArg } = await import("./render.js");
-    for (const payload of ["[1,2]", '"hello"', "null", "42"]) {
-      const result = parseVariablesArg(payload, undefined);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.title).toBe("Invalid variables payload");
-    }
-  });
-
-  it("surfaces filesystem errors from --variables-file", async () => {
-    const { parseVariablesArg } = await import("./render.js");
-    const result = parseVariablesArg(undefined, "missing.json", () => {
-      throw new Error("ENOENT: no such file");
+  it("rejects unparseable JSON with a source-aware kind", () => {
+    expect(expectErr(parseVariablesArg("{not json", undefined))).toMatchObject({
+      kind: "parse-error",
+      source: "inline",
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.title).toBe("Could not read --variables-file");
-      expect(result.message).toMatch(/missing\.json/);
-      expect(result.message).toMatch(/ENOENT/);
+    expect(expectErr(parseVariablesArg(undefined, "x", () => "{not json"))).toMatchObject({
+      kind: "parse-error",
+      source: "file",
+    });
+  });
+
+  it("rejects non-object payloads (array, string, null, number)", () => {
+    for (const payload of ["[1,2]", '"hello"', "null", "42"]) {
+      expect(expectErr(parseVariablesArg(payload, undefined))).toEqual({ kind: "shape-error" });
     }
+  });
+
+  it("surfaces filesystem errors from --variables-file", () => {
+    const err = expectErr<{
+      kind: "read-error";
+      path: string;
+      cause: string;
+    }>(
+      parseVariablesArg(undefined, "missing.json", () => {
+        throw new Error("ENOENT: no such file");
+      }),
+    );
+    expect(err.kind).toBe("read-error");
+    expect(err.path).toBe("missing.json");
+    expect(err.cause).toMatch(/ENOENT/);
   });
 });

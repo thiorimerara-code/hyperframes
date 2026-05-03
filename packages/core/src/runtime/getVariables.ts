@@ -38,14 +38,10 @@ function readDeclaredDefaults(root: Element | null): Record<string, unknown> {
 
   const out: Record<string, unknown> = {};
   for (const entry of parsed) {
-    if (
-      entry &&
-      typeof entry === "object" &&
-      typeof (entry as { id?: unknown }).id === "string" &&
-      "default" in entry
-    ) {
-      out[(entry as { id: string }).id] = (entry as { default: unknown }).default;
-    }
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.id !== "string" || !("default" in e)) continue;
+    out[e.id] = e.default;
   }
   return out;
 }

@@ -398,14 +398,21 @@ interface RenderOptions {
   variables?: Record<string, unknown>;
 }
 
+export type VariablesParseError =
+  | { kind: "conflict" }
+  | { kind: "read-error"; path: string; cause: string }
+  | { kind: "parse-error"; source: "inline" | "file"; cause: string }
+  | { kind: "shape-error" };
+
 export type VariablesParseResult =
   | { ok: true; value: Record<string, unknown> | undefined }
-  | { ok: false; title: string; message: string };
+  | { ok: false; error: VariablesParseError };
 
 /**
  * Pure parser for `--variables` / `--variables-file` flag pair. Splits out
  * from `resolveVariablesArg` so validation paths are unit-testable without
- * triggering `process.exit`.
+ * triggering `process.exit`. Reports failures via a structured `kind`
+ * discriminant so the side-effecting wrapper owns all UI strings.
  */
 export function parseVariablesArg(
   inline: string | undefined,
@@ -413,11 +420,7 @@ export function parseVariablesArg(
   readFile: (path: string) => string = (p) => readFileSync(resolve(p), "utf8"),
 ): VariablesParseResult {
   if (inline != null && filePath != null) {
-    return {
-      ok: false,
-      title: "Conflicting variables flags",
-      message: "Use either --variables or --variables-file, not both.",
-    };
+    return { ok: false, error: { kind: "conflict" } };
   }
   let raw: string | undefined;
   let source: "inline" | "file" | undefined;
@@ -429,11 +432,13 @@ export function parseVariablesArg(
       raw = readFile(filePath);
       source = "file";
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
-        title: "Could not read --variables-file",
-        message: `${filePath}: ${message}`,
+        error: {
+          kind: "read-error",
+          path: filePath,
+          cause: error instanceof Error ? error.message : String(error),
+        },
       };
     }
   }
@@ -443,21 +448,47 @@ export function parseVariablesArg(
   try {
     parsed = JSON.parse(raw);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
-      title: source === "file" ? "Invalid JSON in --variables-file" : "Invalid JSON in --variables",
-      message,
+      error: {
+        kind: "parse-error",
+        source: source ?? "inline",
+        cause: error instanceof Error ? error.message : String(error),
+      },
     };
   }
   if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return {
-      ok: false,
-      title: "Invalid variables payload",
-      message: 'Variables must be a JSON object (e.g. {"title":"Hello"}).',
-    };
+    return { ok: false, error: { kind: "shape-error" } };
   }
   return { ok: true, value: parsed as Record<string, unknown> };
+}
+
+function variablesErrorMessage(error: VariablesParseError): { title: string; message: string } {
+  switch (error.kind) {
+    case "conflict":
+      return {
+        title: "Conflicting variables flags",
+        message: "Use either --variables or --variables-file, not both.",
+      };
+    case "read-error":
+      return {
+        title: "Could not read --variables-file",
+        message: `${error.path}: ${error.cause}`,
+      };
+    case "parse-error":
+      return {
+        title:
+          error.source === "file"
+            ? "Invalid JSON in --variables-file"
+            : "Invalid JSON in --variables",
+        message: error.cause,
+      };
+    case "shape-error":
+      return {
+        title: "Invalid variables payload",
+        message: 'Variables must be a JSON object (e.g. {"title":"Hello"}).',
+      };
+  }
 }
 
 /**
@@ -471,7 +502,8 @@ export function resolveVariablesArg(
 ): Record<string, unknown> | undefined {
   const result = parseVariablesArg(inline, filePath);
   if (!result.ok) {
-    errorBox(result.title, result.message);
+    const { title, message } = variablesErrorMessage(result.error);
+    errorBox(title, message);
     process.exit(1);
   }
   return result.value;

@@ -162,9 +162,9 @@ export async function createCaptureSession(
   if (options.variables && Object.keys(options.variables).length > 0) {
     const variablesJson = JSON.stringify(options.variables);
     await page.evaluateOnNewDocument((json: string) => {
+      type WindowWithVariables = Window & { __hfVariables?: Record<string, unknown> };
       try {
-        (window as unknown as { __hfVariables?: Record<string, unknown> }).__hfVariables =
-          JSON.parse(json);
+        (window as WindowWithVariables).__hfVariables = JSON.parse(json);
       } catch {
         // The CLI validated the JSON before this point — a parse failure here
         // means the page swapped JSON.parse, which is the page's problem.
