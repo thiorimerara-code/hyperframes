@@ -26,12 +26,16 @@ Use `npx hyperframes compositions` to see all compositions in a project.
 
 ## Variables
 
-Two attributes work together:
+Two attributes with different shapes and different jobs:
 
-- **`data-composition-variables`** on the `<html>` root *declares* the variables (id, type, label, default).
-- **`data-variable-values`** on a sub-comp host element *overrides* values for that one instance.
+- **`data-composition-variables`** on the `<html>` root — a JSON **array of declarations** (`{id, type, label, default}` per entry). Defines the schema: which variables exist, what type they are, and what defaults to use when no override is provided.
+- **`data-variable-values`** on a sub-comp host element — a JSON **object keyed by variable id** (`{"title":"Pro","price":"$29"}`). Carries per-instance overrides for that one mount of the sub-composition.
 
-Inside any composition script, `window.__hyperframes.getVariables()` returns the merged result of declarations + overrides. CLI `npx hyperframes render --variables '{...}'` provides a top-level override that layers the same way.
+They aren't redundant — one is "what variables does this composition have?" and the other is "what values should this particular embed use?" Inside any composition script, `window.__hyperframes.getVariables()` returns the merged result. Layering, lowest to highest precedence:
+
+1. Declared defaults from `data-composition-variables`
+2. Per-instance overrides from the host's `data-variable-values` (sub-comp embeds only)
+3. CLI overrides from `npx hyperframes render --variables '{...}'` (top-level renders only)
 
 ```html
 <!-- compositions/card.html -->
