@@ -244,11 +244,8 @@ async function mountCompositionContent(params: {
       ...parseHostVariableValues(params.host),
     };
     if (Object.keys(merged).length > 0) {
-      const w = window as Window & {
-        __hfVariablesByComp?: Record<string, Record<string, unknown>>;
-      };
-      if (!w.__hfVariablesByComp) w.__hfVariablesByComp = {};
-      w.__hfVariablesByComp[scopeCompositionId] = merged;
+      if (!window.__hfVariablesByComp) window.__hfVariablesByComp = {};
+      window.__hfVariablesByComp[scopeCompositionId] = merged;
     }
   }
 

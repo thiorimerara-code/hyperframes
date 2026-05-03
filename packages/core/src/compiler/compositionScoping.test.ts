@@ -64,7 +64,6 @@ body { margin: 0; }
         getVariables: () => ({ title: "TOP-LEVEL-LEAK" }),
         fitTextFontSize: () => undefined,
       },
-      __captured: undefined as unknown,
     };
     const wrapped = wrapScopedCompositionScript(
       `window.__captured = __hyperframes.getVariables();`,
@@ -85,7 +84,6 @@ body { margin: 0; }
         getVariables: () => ({ title: "TOP-LEVEL-LEAK" }),
         fitTextFontSize: () => undefined,
       },
-      __captured: undefined as unknown,
     };
     const wrapped = wrapScopedCompositionScript(
       `window.__captured = __hyperframes.getVariables();`,
