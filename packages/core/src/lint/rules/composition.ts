@@ -1,5 +1,6 @@
 import type { LintContext, HyperframeLintFinding } from "../context";
 import { findHtmlTag, readAttr, readJsonAttr, truncateSnippet } from "../utils";
+import { COMPOSITION_VARIABLE_TYPES } from "../../core.types";
 
 // Agent guidance thresholds: warning-only nudges for files/tracks that become hard
 // to inspect and revise reliably in a single composition.
@@ -475,7 +476,7 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
     }
 
     const findings: HyperframeLintFinding[] = [];
-    const knownTypes = new Set(["string", "number", "color", "boolean", "enum"]);
+    const knownTypes = new Set<string>(COMPOSITION_VARIABLE_TYPES);
     for (let i = 0; i < parsed.length; i += 1) {
       const entry = parsed[i];
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) {

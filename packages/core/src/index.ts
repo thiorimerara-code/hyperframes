@@ -38,6 +38,7 @@ export {
   CANVAS_DIMENSIONS,
   TIMELINE_COLORS,
   DEFAULT_DURATIONS,
+  COMPOSITION_VARIABLE_TYPES,
   isTextElement,
   isMediaElement,
   isCompositionElement,
