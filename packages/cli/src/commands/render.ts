@@ -35,7 +35,14 @@ import { bytesToMb } from "../telemetry/system.js";
 import { VERSION } from "../version.js";
 import { isDevMode } from "../utils/env.js";
 import { buildDockerRunArgs } from "../utils/dockerRunArgs.js";
+import { ensureDOMParser } from "../utils/dom.js";
 import type { RenderJob } from "@hyperframes/producer";
+import {
+  extractCompositionMetadata,
+  validateVariables,
+  formatVariableValidationIssue,
+  type VariableValidationIssue,
+} from "@hyperframes/core";
 
 const VALID_FPS = new Set([24, 30, 60]);
 const VALID_QUALITY = new Set(["draft", "standard", "high"]);
@@ -141,6 +148,12 @@ export default defineCommand({
       type: "string",
       description:
         "Path to a JSON file with variable values (alternative to --variables). The file must contain a single JSON object.",
+    },
+    "strict-variables": {
+      type: "boolean",
+      description:
+        "Fail render if any --variables key is undeclared or has a wrong type vs the composition's data-composition-variables. Without this flag, mismatches are warnings.",
+      default: false,
     },
   },
   async run({ args }) {
@@ -349,6 +362,33 @@ export default defineCommand({
     // ── Resolve --variables / --variables-file ──────────────────────────
     const variables = resolveVariablesArg(args.variables, args["variables-file"]);
 
+    // ── Validate --variables against data-composition-variables ─────────
+    const strictVariables = args["strict-variables"] ?? false;
+    if (variables && Object.keys(variables).length > 0) {
+      const issues = validateVariablesAgainstProject(project.indexPath, variables);
+      if (issues.length > 0) {
+        if (!quiet) {
+          console.log("");
+          console.log(
+            c.warn(
+              `Variable ${issues.length === 1 ? "issue" : "issues"} (${issues.length}) — values may not render as expected:`,
+            ),
+          );
+          for (const issue of issues) {
+            console.log("  " + c.dim(formatVariableValidationIssue(issue)));
+          }
+          console.log("");
+        }
+        if (strictVariables) {
+          console.log(
+            c.error("  Aborting render due to variable issues (--strict-variables mode)."),
+          );
+          console.log("");
+          process.exit(1);
+        }
+      }
+    }
+
     // ── Render ────────────────────────────────────────────────────────────
     if (useDocker) {
       await renderDocker(project.dir, outputPath, {
@@ -507,6 +547,33 @@ export function resolveVariablesArg(
     process.exit(1);
   }
   return result.value;
+}
+
+/**
+ * Validate `--variables` values against the project's top-level
+ * `data-composition-variables` declarations. Returns an empty array when
+ * the index has no declarations or when every key is declared with a
+ * matching type. Errors reading the index are silently treated as "no
+ * declarations" — the lint pass owns malformed-HTML diagnostics, render
+ * shouldn't fail just because the schema is unreadable.
+ */
+export function validateVariablesAgainstProject(
+  indexPath: string,
+  values: Record<string, unknown>,
+): VariableValidationIssue[] {
+  let html: string;
+  try {
+    html = readFileSync(indexPath, "utf8");
+  } catch {
+    return [];
+  }
+  // extractCompositionMetadata uses DOMParser, which Node doesn't ship.
+  // Same pattern as `compositions.ts` and other CLI commands that touch
+  // @hyperframes/core's HTML parsers.
+  ensureDOMParser();
+  const meta = extractCompositionMetadata(html);
+  if (meta.variables.length === 0) return [];
+  return validateVariables(values, meta.variables);
 }
 
 export function resolveBrowserGpuForCli(
