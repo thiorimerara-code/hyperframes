@@ -7,7 +7,11 @@ import {
   parseHTMLContent,
   stripEmbeddedRuntimeScripts,
 } from "./htmlDocument";
-import { rewriteAssetPaths, rewriteCssAssetUrls } from "./rewriteSubCompPaths";
+import {
+  rewriteAssetPaths,
+  rewriteCssAssetUrls,
+  rewriteInlineStyleAssetUrls,
+} from "./rewriteSubCompPaths";
 import { scopeCssToComposition, wrapScopedCompositionScript } from "./compositionScoping";
 import { validateHyperframeHtmlContract } from "./staticGuard";
 
@@ -501,18 +505,31 @@ export async function bundleToSingleHtml(
         el.setAttribute(attr, val);
       },
     );
+    const styledEls = innerRoot
+      ? innerRoot.querySelectorAll("[style]")
+      : contentDoc.querySelectorAll("[style]");
+    rewriteInlineStyleAssetUrls(
+      styledEls,
+      src,
+      (el: Element) => el.getAttribute("style"),
+      (el: Element, val: string) => {
+        el.setAttribute("style", val);
+      },
+    );
 
     if (innerRoot) {
       const innerW = innerRoot.getAttribute("data-width");
       const innerH = innerRoot.getAttribute("data-height");
       if (innerW && !hostEl.getAttribute("data-width")) hostEl.setAttribute("data-width", innerW);
       if (innerH && !hostEl.getAttribute("data-height")) hostEl.setAttribute("data-height", innerH);
+      innerRoot.setAttribute("data-composition-file", src);
       for (const child of [...innerRoot.querySelectorAll("style, script")]) child.remove();
       hostEl.innerHTML = compId ? innerRoot.innerHTML || "" : innerRoot.outerHTML || "";
     } else {
       for (const child of [...contentDoc.querySelectorAll("style, script")]) child.remove();
       hostEl.innerHTML = contentDoc.body.innerHTML || "";
     }
+    hostEl.setAttribute("data-composition-file", src);
     hostEl.removeAttribute("data-composition-src");
   }
 

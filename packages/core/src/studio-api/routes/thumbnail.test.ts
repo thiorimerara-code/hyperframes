@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerThumbnailRoutes } from "./thumbnail";
@@ -93,5 +93,85 @@ describe("registerThumbnailRoutes", () => {
         format: "png",
       }),
     );
+  });
+
+  it("forwards selector occurrence indexes to thumbnail generation", async () => {
+    const adapter = createAdapter();
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+
+    const response = await app.request(
+      "http://localhost/projects/demo/thumbnail/index.html?t=1.2&selector=.card&selectorIndex=2",
+    );
+
+    expect(response.status).toBe(200);
+    expect(adapter.generateThumbnail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selector: ".card",
+        selectorIndex: 2,
+      }),
+    );
+  });
+
+  it("keeps url thumbnail versions separated in the disk cache", async () => {
+    const adapter = createAdapter();
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+
+    await app.request("http://localhost/projects/demo/thumbnail/index.html?t=2&v=old");
+    await app.request("http://localhost/projects/demo/thumbnail/index.html?t=2&v=old");
+    await app.request("http://localhost/projects/demo/thumbnail/index.html?t=2&v=new");
+
+    expect(adapter.generateThumbnail).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps changed composition dimensions separated in the disk cache", async () => {
+    const adapter = createAdapter();
+    const project = await adapter.resolveProject("demo");
+    if (!project) throw new Error("missing project");
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+
+    const indexPath = join(project.dir, "index.html");
+    writeFileSync(indexPath, `<div data-composition-id="main" data-width="640" data-height="360">`);
+    await app.request("http://localhost/projects/demo/thumbnail/index.html?t=2&v=test");
+
+    writeFileSync(
+      indexPath,
+      `<div data-composition-id="main" data-width="1280" data-height="720">`,
+    );
+    await app.request("http://localhost/projects/demo/thumbnail/index.html?t=2&v=test");
+
+    expect(adapter.generateThumbnail).toHaveBeenCalledTimes(2);
+    expect(adapter.generateThumbnail).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        width: 1280,
+        height: 720,
+      }),
+    );
+  });
+
+  it("keeps changed studio manual edits separated in the disk cache", async () => {
+    const adapter = createAdapter();
+    const project = await adapter.resolveProject("demo");
+    if (!project) throw new Error("missing project");
+    const app = new Hono();
+    registerThumbnailRoutes(app, adapter);
+
+    const indexPath = join(project.dir, "index.html");
+    writeFileSync(indexPath, `<div data-composition-id="main" data-width="640" data-height="360">`);
+    const manualEditsDir = join(project.dir, ".hyperframes");
+    mkdirSync(manualEditsDir, { recursive: true });
+    const manualEditsPath = join(manualEditsDir, "studio-manual-edits.json");
+    writeFileSync(manualEditsPath, `{"version":1,"edits":[]}`);
+
+    await app.request("http://localhost/projects/demo/thumbnail/index.html?t=2&v=test");
+    writeFileSync(
+      manualEditsPath,
+      `{"version":1,"edits":[{"kind":"rotation","target":{"sourceFile":"index.html","id":"card"},"angle":30}]}`,
+    );
+    await app.request("http://localhost/projects/demo/thumbnail/index.html?t=2&v=test");
+
+    expect(adapter.generateThumbnail).toHaveBeenCalledTimes(2);
   });
 });

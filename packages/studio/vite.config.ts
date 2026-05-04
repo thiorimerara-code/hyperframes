@@ -9,11 +9,13 @@ import {
   realpathSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import type {
-  StudioApiAdapter,
-  ResolvedProject,
-  RenderJobState,
+import { createHash } from "node:crypto";
+import {
+  type ResolvedProject,
+  type RenderJobState,
+  type StudioApiAdapter,
 } from "@hyperframes/core/studio-api";
+import { createStudioManualEditsRenderBodyScript } from "@hyperframes/core/studio-api/manual-edits-render-script";
 import { createRetryingModuleLoader, ensureProducerDist } from "./vite.producer";
 import { readNodeRequestBody } from "./vite.request-body.js";
 import { seekThumbnailPreview } from "./vite.thumbnail";
@@ -48,6 +50,7 @@ async function getSharedBrowser(): Promise<import("puppeteer-core").Browser | nu
 // In-flight thumbnail dedup
 const _thumbnailInflight = new Map<string, Promise<Buffer>>();
 const THUMBNAIL_CACHE_VERSION = "v3";
+const STUDIO_MANUAL_EDITS_PATH = ".hyperframes/studio-manual-edits.json";
 
 interface ScreenshotClip {
   x: number;
@@ -56,24 +59,59 @@ interface ScreenshotClip {
   height: number;
 }
 
+function readStudioManualEditManifestContent(projectDir: string): string {
+  const manifestPath = join(projectDir, STUDIO_MANUAL_EDITS_PATH);
+  if (!existsSync(manifestPath)) return "";
+  try {
+    return readFileSync(manifestPath, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+async function applyStudioManualEditsToThumbnailPage(
+  page: import("puppeteer-core").Page,
+  manifestContent: string,
+  activeCompositionPath: string,
+): Promise<void> {
+  const script = createStudioManualEditsRenderBodyScript(manifestContent, {
+    activeCompositionPath,
+  });
+  if (!script) return;
+  await page.addScriptTag({ content: script });
+}
+
+async function reapplyStudioManualEditsToThumbnailPage(
+  page: import("puppeteer-core").Page,
+): Promise<void> {
+  await page.evaluate(() => {
+    const apply = (window as Window & { __hfStudioManualEditsApply?: () => number })
+      .__hfStudioManualEditsApply;
+    if (typeof apply === "function") apply();
+  });
+}
+
 // ── Vite adapter for the shared studio API ───────────────────────────────────
 
 function createViteAdapter(dataDir: string, server: ViteDevServer): StudioApiAdapter {
   // Lazy-load the bundler via Vite's SSR module loader
   let _bundler: ((dir: string) => Promise<string>) | null = null;
-  let _producerModulePromise: Promise<{
-    createRenderJob: (config: {
-      fps: 24 | 30 | 60;
-      quality: "draft" | "standard" | "high";
-      format: string;
-    }) => unknown;
-    executeRenderJob: (
-      job: unknown,
-      projectDir: string,
-      outputPath: string,
-      onProgress?: (job: { progress: number; currentStage?: string }) => void,
-    ) => Promise<void>;
-  }> | null = null;
+  let _producerModuleLoader:
+    | (() => Promise<{
+        createRenderJob: (config: {
+          fps: 24 | 30 | 60;
+          quality: "draft" | "standard" | "high";
+          format: string;
+          renderBodyScripts?: string[];
+        }) => unknown;
+        executeRenderJob: (
+          job: unknown,
+          projectDir: string,
+          outputPath: string,
+          onProgress?: (job: { progress: number; currentStage?: string }) => void,
+        ) => Promise<void>;
+      }>)
+    | null = null;
   const getBundler = async () => {
     if (!_bundler) {
       try {
@@ -88,8 +126,8 @@ function createViteAdapter(dataDir: string, server: ViteDevServer): StudioApiAda
   };
 
   const getProducerModule = async () => {
-    if (!_producerModulePromise) {
-      _producerModulePromise = createRetryingModuleLoader(async () => {
+    if (!_producerModuleLoader) {
+      _producerModuleLoader = createRetryingModuleLoader(async () => {
         const { built } = ensureProducerDist({
           studioDir: __dirname,
           env: process.env,
@@ -101,9 +139,9 @@ function createViteAdapter(dataDir: string, server: ViteDevServer): StudioApiAda
         }
         const producerPkg = "@hyperframes/producer";
         return await import(/* @vite-ignore */ producerPkg);
-      })();
+      });
     }
-    return _producerModulePromise();
+    return _producerModuleLoader();
   };
 
   return {
@@ -211,10 +249,13 @@ function createViteAdapter(dataDir: string, server: ViteDevServer): StudioApiAda
             if (systemChrome) process.env.PRODUCER_HEADLESS_SHELL_PATH = systemChrome;
           }
           const { createRenderJob, executeRenderJob } = await getProducerModule();
+          const manifestContent = readStudioManualEditManifestContent(opts.project.dir);
+          const manualEditsRenderScript = createStudioManualEditsRenderBodyScript(manifestContent);
           const job = createRenderJob({
             fps: opts.fps as 24 | 30 | 60,
             quality: opts.quality as "draft" | "standard" | "high",
             format: opts.format,
+            ...(manualEditsRenderScript ? { renderBodyScripts: [manualEditsRenderScript] } : {}),
           });
           const onProgress = (j: { progress: number; currentStage?: string }) => {
             state.progress = j.progress;
@@ -245,9 +286,13 @@ function createViteAdapter(dataDir: string, server: ViteDevServer): StudioApiAda
 
     async generateThumbnail(opts) {
       const selectorKey = opts.selector
-        ? `_${opts.selector.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 80)}`
+        ? `_${opts.selector.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 80)}_${opts.selectorIndex ?? 0}`
         : "";
-      const cacheKey = `${THUMBNAIL_CACHE_VERSION}_${opts.compPath.replace(/\//g, "_")}_${opts.seekTime.toFixed(2)}${selectorKey}.jpg`;
+      const manifestContent = readStudioManualEditManifestContent(opts.project.dir);
+      const manifestKey = manifestContent.trim()
+        ? `_${createHash("sha1").update(manifestContent).digest("hex").slice(0, 16)}`
+        : "";
+      const cacheKey = `${THUMBNAIL_CACHE_VERSION}${manifestKey}_${opts.compPath.replace(/\//g, "_")}_${opts.seekTime.toFixed(2)}${selectorKey}.${opts.format === "png" ? "png" : "jpg"}`;
 
       let bufferPromise = _thumbnailInflight.get(cacheKey);
       if (!bufferPromise) {
@@ -274,27 +319,40 @@ function createViteAdapter(dataDir: string, server: ViteDevServer): StudioApiAda
             )
             .catch(() => {});
           await seekThumbnailPreview(page, opts.seekTime);
+          await applyStudioManualEditsToThumbnailPage(page, manifestContent, opts.compPath);
           await page.evaluate("document.fonts?.ready");
           await new Promise((r) => setTimeout(r, 200));
+          await reapplyStudioManualEditsToThumbnailPage(page);
           let clip: ScreenshotClip | undefined;
           if (opts.selector) {
-            clip = await page.evaluate((selector: string) => {
-              const el = document.querySelector(selector);
-              if (!(el instanceof HTMLElement)) return undefined;
-              const rect = el.getBoundingClientRect();
-              if (rect.width < 4 || rect.height < 4) return undefined;
-              const pad = 8;
-              const x = Math.max(0, rect.left - pad);
-              const y = Math.max(0, rect.top - pad);
-              const maxWidth = window.innerWidth - x;
-              const maxHeight = window.innerHeight - y;
-              return {
-                x,
-                y,
-                width: Math.max(1, Math.min(rect.width + pad * 2, maxWidth)),
-                height: Math.max(1, Math.min(rect.height + pad * 2, maxHeight)),
-              };
-            }, opts.selector);
+            clip = await page.evaluate(
+              (selector: string, selectorIndex: number | undefined) => {
+                const matches = Array.from(document.querySelectorAll(selector)).filter(
+                  (el): el is HTMLElement => el instanceof HTMLElement,
+                );
+                const safeIndex = Math.max(
+                  0,
+                  Math.min(matches.length - 1, Math.floor(selectorIndex ?? 0)),
+                );
+                const el = matches[safeIndex] ?? null;
+                if (!(el instanceof HTMLElement)) return undefined;
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 4 || rect.height < 4) return undefined;
+                const pad = 8;
+                const x = Math.max(0, rect.left - pad);
+                const y = Math.max(0, rect.top - pad);
+                const maxWidth = window.innerWidth - x;
+                const maxHeight = window.innerHeight - y;
+                return {
+                  x,
+                  y,
+                  width: Math.max(1, Math.min(rect.width + pad * 2, maxWidth)),
+                  height: Math.max(1, Math.min(rect.height + pad * 2, maxHeight)),
+                };
+              },
+              opts.selector,
+              opts.selectorIndex,
+            );
           }
           const buf = await page.screenshot(
             opts.format === "png"
@@ -492,10 +550,13 @@ function devProjectApi(): Plugin {
         const isProjectFile = realProjectPaths.some((p) => filePath.startsWith(p));
         if (
           isProjectFile &&
-          (filePath.endsWith(".html") || filePath.endsWith(".css") || filePath.endsWith(".js"))
+          (filePath.endsWith(".html") ||
+            filePath.endsWith(".css") ||
+            filePath.endsWith(".js") ||
+            filePath.endsWith(".json"))
         ) {
           console.log(`[Studio] File changed: ${filePath}`);
-          server.ws.send({ type: "custom", event: "hf:file-change", data: {} });
+          server.ws.send({ type: "custom", event: "hf:file-change", data: { path: filePath } });
         }
       });
     },

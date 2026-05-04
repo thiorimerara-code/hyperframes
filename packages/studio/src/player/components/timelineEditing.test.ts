@@ -248,7 +248,7 @@ describe("getTimelineEditCapabilities", () => {
     });
   });
 
-  it("disables move and trims for generic motion clips even when patchable", () => {
+  it("allows moving generic motion clips while keeping trims blocked", () => {
     expect(
       getTimelineEditCapabilities({
         tag: "section",
@@ -256,7 +256,7 @@ describe("getTimelineEditCapabilities", () => {
         selector: ".feature-card",
       }),
     ).toEqual({
-      canMove: false,
+      canMove: true,
       canTrimStart: false,
       canTrimEnd: false,
     });
@@ -428,7 +428,6 @@ describe("buildClipRangeSelection", () => {
     });
   });
 });
-
 describe("resolveTimelineAutoScroll", () => {
   it("does not scroll when the pointer stays away from the edges", () => {
     expect(
@@ -512,7 +511,6 @@ describe("buildTimelineElementAgentPrompt", () => {
     ).toContain("If this clip is animated with GSAP");
   });
 });
-
 describe("resolveTimelineResize", () => {
   it("shrinks clip duration from the right edge", () => {
     expect(

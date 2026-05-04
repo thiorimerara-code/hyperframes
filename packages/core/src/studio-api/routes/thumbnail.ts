@@ -1,9 +1,11 @@
 import type { Hono } from "hono";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import type { StudioApiAdapter } from "../types.js";
 
-const THUMBNAIL_CACHE_VERSION = "v3";
+const THUMBNAIL_CACHE_VERSION = "v4";
+const STUDIO_MANUAL_EDITS_PATH = ".hyperframes/studio-manual-edits.json";
 
 export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): void {
   api.get("/projects/:id/thumbnail/*", async (c) => {
@@ -27,19 +29,32 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
     const selector = url.searchParams.get("selector") || undefined;
     const format = url.searchParams.get("format") === "png" ? "png" : "jpeg";
     const contentType = format === "png" ? "image/png" : "image/jpeg";
+    const rawSelectorIndex = Number.parseInt(url.searchParams.get("selectorIndex") || "0", 10);
+    const selectorIndex =
+      Number.isFinite(rawSelectorIndex) && rawSelectorIndex > 0 ? rawSelectorIndex : undefined;
+    const urlVersion = url.searchParams.get("v") || "";
 
     // Determine composition dimensions from HTML
     let compW = vpWidth || 1920;
     let compH = vpHeight || 1080;
+    let sourceMtime = 0;
     if (!vpWidth) {
       const htmlFile = join(project.dir, compPath);
       if (existsSync(htmlFile)) {
+        sourceMtime = Math.round(statSync(htmlFile).mtimeMs);
         const html = readFileSync(htmlFile, "utf-8");
         const wMatch = html.match(/data-width=["'](\d+)["']/);
         const hMatch = html.match(/data-height=["'](\d+)["']/);
         if (wMatch?.[1]) compW = parseInt(wMatch[1]);
         if (hMatch?.[1]) compH = parseInt(hMatch[1]);
       }
+    }
+    const manualEditsFile = join(project.dir, STUDIO_MANUAL_EDITS_PATH);
+    let manualEditsKey = "";
+    if (existsSync(manualEditsFile)) {
+      const manualEditsContent = readFileSync(manualEditsFile, "utf-8");
+      manualEditsKey = `_${createHash("sha1").update(manualEditsContent).digest("hex").slice(0, 16)}`;
+      sourceMtime = Math.max(sourceMtime, Math.round(statSync(manualEditsFile).mtimeMs));
     }
 
     const previewUrl =
@@ -50,9 +65,12 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
     // Cache
     const cacheDir = join(project.dir, ".thumbnails");
     const selectorKey = selector
-      ? `_${selector.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 80)}`
+      ? `_${selector.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 80)}_${selectorIndex ?? 0}`
       : "";
-    const cacheKey = `${THUMBNAIL_CACHE_VERSION}_${format}_${compPath.replace(/\//g, "_")}_${seekTime.toFixed(2)}${selectorKey}.${format === "png" ? "png" : "jpg"}`;
+    const urlVersionKey = urlVersion
+      ? `_${urlVersion.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 32)}`
+      : "";
+    const cacheKey = `${THUMBNAIL_CACHE_VERSION}${urlVersionKey}${manualEditsKey}_${format}_${compPath.replace(/\//g, "_")}_${compW}x${compH}_${sourceMtime}_${seekTime.toFixed(2)}${selectorKey}.${format === "png" ? "png" : "jpg"}`;
     const cachePath = join(cacheDir, cacheKey);
     if (existsSync(cachePath)) {
       return new Response(new Uint8Array(readFileSync(cachePath)), {
@@ -70,6 +88,7 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
         previewUrl,
         selector,
         format,
+        selectorIndex,
       });
       if (!buffer) {
         return c.json({ error: "Thumbnail generation returned null" }, 500);
