@@ -145,6 +145,18 @@ export function buildEncoderArgs(
       if (bitrate) args.push("-b:v", bitrate);
       else args.push("-crf", String(quality));
 
+      // Disable B-frames. Standard h264 with B-frames produces negative DTS
+      // at the start of the stream (the first B-frame's decode order is
+      // "before" the first I-frame's presentation time). VS Code's video
+      // preview, several browser <video> pipelines, and some HW decoders
+      // freeze on the first frame when DTS is negative, so audio plays alone.
+      // -bf 0 makes PTS == DTS at every frame, eliminating the issue at the
+      // source. Quality cost is ~5–10% larger files at the same CRF — a
+      // worthwhile trade for "the file plays everywhere".
+      if (codec === "h264") {
+        args.push("-bf", "0");
+      }
+
       // Encoder-specific params: anti-banding + color space tagging.
       // aq-mode=3 redistributes bits to dark flat areas (gradients).
       // For HDR x265 paths we additionally embed BT.2020 + transfer + HDR static
@@ -238,6 +250,8 @@ export function buildEncoderArgs(
   if (gpuEncoder !== "vaapi") {
     args.push("-pix_fmt", pixelFormat);
   }
+
+  args.push("-avoid_negative_ts", "make_zero");
 
   args.push("-y", outputPath);
   return args;
@@ -510,6 +524,9 @@ export async function muxVideoWithAudio(
   } else {
     args.push("-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart");
   }
+  // PTS bases can diverge during mux and reintroduce negative DTS. See
+  // buildEncoderArgs for the full reasoning on why that breaks playback.
+  args.push("-avoid_negative_ts", "make_zero");
   args.push("-shortest", "-y", outputPath);
 
   const processTimeout = config?.ffmpegProcessTimeout ?? DEFAULT_CONFIG.ffmpegProcessTimeout;
