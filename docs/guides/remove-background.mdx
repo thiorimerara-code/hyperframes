@@ -25,7 +25,7 @@ The CLI ships a built-in `remove-background` command that runs locally — no AP
   </Step>
   <Step title="Remove the background from your video">
     ```bash Terminal
-    npx hyperframes remove-background avatar.mp4 -o transparent.webm
+    npx hyperframes remove-background subject.mp4 -o transparent.webm
     ```
 
     On the first run, the CLI downloads ~168 MB of model weights to `~/.cache/hyperframes/background-removal/models/`. Subsequent runs reuse the cache.
@@ -44,7 +44,7 @@ The CLI ships a built-in `remove-background` command that runs locally — no AP
       <!-- background layer -->
       <img src="city.jpg" class="bg" />
 
-      <!-- transparent avatar floats on top -->
+      <!-- transparent subject floats on top -->
       <video src="transparent.webm" autoplay muted loop playsinline></video>
     </div>
     ```
@@ -75,8 +75,8 @@ The output is encoded with the exact ffmpeg flags Chrome's `<video>` element nee
 | `.png` | PNG with alpha | Single-image cutout (only when the input is also a single image) | varies |
 
 ```bash Terminal
-npx hyperframes remove-background avatar.mp4 -o transparent.webm        # web playback
-npx hyperframes remove-background avatar.mp4 -o transparent.mov         # editing
+npx hyperframes remove-background subject.mp4 -o transparent.webm        # web playback
+npx hyperframes remove-background subject.mp4 -o transparent.mov         # editing
 npx hyperframes remove-background portrait.jpg -o cutout.png       # still image
 ```
 
@@ -91,7 +91,7 @@ Real-world numbers from the [matting eval](https://www.heygenverse.com/a/0dd5a43
 | Linux x86 | CPU | ~1100 | ~16 min |
 | macOS Intel | CPU | ~900 | ~13 min |
 
-Matting is offline preprocessing — you run it once per asset and reuse the output. CPU-only is slow but always works; if you reuse the same avatar repeatedly, run it once on a faster machine and check the transparent output into your project.
+Matting is offline preprocessing — you run it once per asset and reuse the output. CPU-only is slow but always works; if you reuse the same subject clip repeatedly, run it once on a faster machine and check the transparent output into your project.
 
 ## Picking a device explicitly
 
@@ -100,13 +100,13 @@ Matting is offline preprocessing — you run it once per asset and reuse the out
 - **Force CPU on a GPU box** when you want to keep the GPU free for other work, or are debugging an EP-specific issue:
 
   ```bash Terminal
-  npx hyperframes remove-background avatar.mp4 -o transparent.webm --device cpu
+  npx hyperframes remove-background subject.mp4 -o transparent.webm --device cpu
   ```
 
 - **Opt into CUDA** by setting `HYPERFRAMES_CUDA=1` and providing a GPU-enabled `onnxruntime-node` build (the bundled build is CPU + CoreML only, to keep the install small for the 99% of users who don't have a GPU):
 
   ```bash Terminal
-  HYPERFRAMES_CUDA=1 npx hyperframes remove-background avatar.mp4 -o transparent.webm --device cuda
+  HYPERFRAMES_CUDA=1 npx hyperframes remove-background subject.mp4 -o transparent.webm --device cuda
   ```
 
 Run `npx hyperframes remove-background --info` to see what providers are detected on your machine and which one `auto` would pick.
@@ -115,7 +115,7 @@ Run `npx hyperframes remove-background --info` to see what providers are detecte
 
 The transparent WebM behaves like any other video element. The two patterns you'll use most:
 
-**Avatar over a background image:**
+**Subject over a background image:**
 
 ```html
 <div style="position: relative; width: 1920px; height: 1080px;">
@@ -131,17 +131,17 @@ The transparent WebM behaves like any other video element. The two patterns you'
 </div>
 ```
 
-**Avatar over a HyperFrames scene:**
+**Subject over a HyperFrames scene:**
 
 ```html
 <!-- scene contents (text, animations, etc.) -->
 <div class="title-card">Welcome</div>
 
-<!-- avatar layered on top -->
-<video src="transparent.webm" autoplay muted loop playsinline class="avatar"></video>
+<!-- subject layered on top -->
+<video src="transparent.webm" autoplay muted loop playsinline class="subject"></video>
 ```
 
-The avatar inherits the composition's frame rate and timeline — it plays through once during the scene's duration, so match the source clip length to the scene length when possible. If the scene is longer than the clip, `loop` handles it.
+The cutout inherits the composition's frame rate and timeline — it plays through once during the scene's duration, so match the source clip length to the scene length when possible. If the scene is longer than the clip, `loop` handles it.
 
 <Tip>
   When rendering a composition that contains a `<video>` element, the renderer reads the source via ffmpeg internally. Transparent WebMs are decoded with the alpha plane preserved.
@@ -155,7 +155,7 @@ The cutout webm is a **re-encoded copy** of the source mp4's RGB — the matter 
 
 | Pattern | Behind the cutout | Result |
 |---|---|---|
-| **Cutout over a different scene** *(most common)* | Static image, gradient, animated bg, or unrelated footage | Clean. The cutout is the only avatar source — no double-Brandon, no edge halo. Use any `--quality`. |
+| **Cutout over a different scene** *(most common)* | Static image, gradient, animated bg, or unrelated footage | Clean. The cutout is the only source of the subject — no doubling, no edge halo. Use any `--quality`. |
 | **Cutout over its own source mp4** *(text-behind-subject, talking-head with overlays)* | The same mp4 the cutout was generated from | Two RGB sources for the same person. At default `--quality balanced` (crf 18) the doubling is barely visible; at `--quality fast` (crf 30) you'll see a slight color shift / soft edge on the silhouette. Use `--quality best` (crf 12) for hero shots. |
 | **Cutout over different footage of the same subject** | Another take of the same person | Looks like two overlapping people. Avoid — re-shoot or re-cut the source. |
 
@@ -168,7 +168,7 @@ Putting a headline *behind* a presenter so their silhouette occludes the text:
 <video
   id="cf-base"
   data-start="0" data-duration="6" data-media-start="0" data-track-index="0"
-  src="avatar.mp4"
+  src="presenter.mp4"
   muted playsinline
 ></video>
 
@@ -186,7 +186,7 @@ Putting a headline *behind* a presenter so their silhouette occludes the text:
   <video
     id="cf-cutout"
     data-start="0" data-duration="6" data-media-start="0" data-track-index="1"
-    src="avatar.webm"
+    src="presenter.webm"
     muted playsinline
   ></video>
 </div>
@@ -248,7 +248,7 @@ If your use case hits one of these, see the alternatives below.
 
 ## Alternatives — when the built-in command isn't the right tool
 
-The CLI ships **one model on purpose** — the one that's MIT-licensed, runs everywhere, and produces production-quality output for HeyGen-style avatar workflows. The list below leads with **free, open-source tools** that pair naturally with HyperFrames. Each entry calls out the actual catch — license, install effort, hardware needs — so you can pick the right one for your situation. Full benchmarks are in the [matting eval](https://www.heygenverse.com/a/0dd5a431-1832-4858-862d-de7fb7d02654).
+The CLI ships **one model on purpose** — the one that's MIT-licensed, runs everywhere, and produces production-quality output for person/portrait video. The list below leads with **free, open-source tools** that pair naturally with HyperFrames. Each entry calls out the actual catch — license, install effort, hardware needs — so you can pick the right one for your situation. Full benchmarks are in the [matting eval](https://www.heygenverse.com/a/0dd5a431-1832-4858-862d-de7fb7d02654).
 
 ### Free, open-source CLIs and libraries
 
@@ -290,7 +290,7 @@ ffmpeg -i frames-%04d.png -c:v libvpx-vp9 \
 
 ### How to choose
 
-- **Avatars / portraits, web playback, MIT-clean** → use the built-in `hyperframes remove-background` (this is what it's tuned for).
+- **Person / portrait video, web playback, MIT-clean** → use the built-in `hyperframes remove-background` (this is what it's tuned for).
 - **Non-human subject** (product, animal, object) → `rembg` with `isnet-general-use`.
 - **Maximum portrait quality, especially hair** → `BiRefNet` via Python.
 - **Long video where edge flicker would be visible**, GPL is OK → `RVM`.
@@ -341,7 +341,7 @@ The decoded `frame0.png` should be RGBA and have non-trivial alpha values.
 The pipeline auto-falls-back to CPU if CoreML fails to bind, with a warning. If you want to skip the CoreML attempt entirely, force CPU:
 
 ```bash Terminal
-npx hyperframes remove-background avatar.mp4 -o transparent.webm --device cpu
+npx hyperframes remove-background subject.mp4 -o transparent.webm --device cpu
 ```
 
 ### The alpha mask has rough or jagged edges

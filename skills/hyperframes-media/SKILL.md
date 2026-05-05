@@ -102,14 +102,14 @@ Compositions consume a flat array of word objects. The `id` field (`w0`, `w1`, .
 
 ## Background Removal (`remove-background`)
 
-Remove the background from a video or image so it can sit as a transparent overlay in a composition (e.g. an avatar floating on a background plate).
+Remove the background from a video or image so the subject (typically a person — avatar, presenter, talking head) sits as a transparent overlay in a composition.
 
 ```bash
-npx hyperframes remove-background avatar.mp4 -o transparent.webm  # default: VP9 alpha WebM
-npx hyperframes remove-background avatar.mp4 -o transparent.mov   # ProRes 4444 (editing)
-npx hyperframes remove-background portrait.jpg -o cutout.png      # single-image cutout
-npx hyperframes remove-background avatar.mp4 -o transparent.webm --device cpu
-npx hyperframes remove-background --info                          # detected providers
+npx hyperframes remove-background subject.mp4 -o transparent.webm  # default: VP9 alpha WebM
+npx hyperframes remove-background subject.mp4 -o transparent.mov   # ProRes 4444 (editing)
+npx hyperframes remove-background portrait.jpg -o cutout.png       # single-image cutout
+npx hyperframes remove-background subject.mp4 -o transparent.webm --device cpu
+npx hyperframes remove-background --info                           # detected providers
 ```
 
 Uses `u2net_human_seg` (MIT). First run downloads ~168 MB of weights to `~/.cache/hyperframes/background-removal/models/`.
@@ -138,17 +138,17 @@ Chrome decodes VP9 alpha natively, so the `.webm` plugs into a composition like 
 
 The cutout webm is a **re-encoded copy** of the source mp4's RGB. That choice has consequences depending on what you put behind it:
 
-| Pattern                                                  | What's behind the cutout                   | Result                                                                                                                                                                                                                             |
-| -------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Cutout over a different scene** (most common)          | Static image, gradient, or unrelated video | Looks great. The cutout's RGB is the only avatar source — no double-Brandon, no edge halo. This is what `remove-background` is built for.                                                                                          |
-| **Cutout over its own source mp4** (text-behind-subject) | Same mp4 the cutout was generated from     | Two RGB sources for the same Brandon. At default `--quality balanced` (crf 18) the doubling is barely visible; at `--quality fast` (crf 30) you'll see a faint color shift / edge halo. Use `--quality best` (crf 12) for masters. |
-| **Cutout over a _different_ take of the same person**    | Footage of the same subject                | Will look like two separate people overlapping. Don't do this.                                                                                                                                                                     |
+| Pattern                                                  | What's behind the cutout                   | Result                                                                                                                                                                                                                            |
+| -------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cutout over a different scene** (most common)          | Static image, gradient, or unrelated video | Looks great. The cutout's RGB is the only source of the subject — no doubling, no edge halo. This is what `remove-background` is built for.                                                                                       |
+| **Cutout over its own source mp4** (text-behind-subject) | Same mp4 the cutout was generated from     | Two RGB sources for the same person. At default `--quality balanced` (crf 18) the doubling is barely visible; at `--quality fast` (crf 30) you'll see a faint color shift / edge halo. Use `--quality best` (crf 12) for masters. |
+| **Cutout over a _different_ take of the same person**    | Footage of the same subject                | Will look like two separate people overlapping. Don't do this.                                                                                                                                                                    |
 
 **Text-behind-subject** (headline behind a presenter):
 
 ```html
 <video
-  src="brandon.mp4"
+  src="presenter.mp4"
   id="bg"
   data-start="0"
   data-duration="6"
@@ -159,7 +159,7 @@ The cutout webm is a **re-encoded copy** of the source mp4's RGB. That choice ha
 <h1 id="headline" style="z-index:2; ...">MAKE IT IN HYPERFRAMES</h1>
 <div class="cutout-wrap" style="position:absolute;inset:0;z-index:3;opacity:0">
   <video
-    src="brandon.webm"
+    src="presenter.webm"
     data-start="0"
     data-duration="6"
     data-track-index="1"

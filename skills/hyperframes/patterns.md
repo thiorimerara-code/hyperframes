@@ -32,7 +32,7 @@ tl.to("#pip-frame", { left: 40, duration: 0.6 }, 30);
 
 ## Text Behind Subject (transparent webm overlay)
 
-Put a headline _behind_ a presenter so their silhouette occludes the text. Requires a transparent cutout produced by `npx hyperframes remove-background avatar.mp4 -o avatar.webm`.
+Put a headline _behind_ a presenter so their silhouette occludes the text. Requires a transparent cutout produced by `npx hyperframes remove-background presenter.mp4 -o presenter.webm`.
 
 Three layers, plus one critical rule:
 
@@ -44,7 +44,7 @@ Three layers, plus one critical rule:
   data-duration="6"
   data-media-start="0"
   data-track-index="0"
-  src="avatar.mp4"
+  src="presenter.mp4"
   muted
   playsinline
 ></video>
@@ -68,7 +68,7 @@ Three layers, plus one critical rule:
     data-duration="6"
     data-media-start="0"
     data-track-index="1"
-    src="avatar.webm"
+    src="presenter.webm"
     muted
     playsinline
   ></video>
@@ -82,7 +82,7 @@ const CUT = 3.3;
 // Reveal headline early
 tl.to("#cf-headline", { clipPath: "inset(0 0 0% 0)", duration: 0.6, ease: "expo.out" }, 0.25);
 
-// At the cut, flip the cutout wrapper visible — Brandon's silhouette
+// At the cut, flip the cutout wrapper visible — the presenter's silhouette
 // punches through the headline.
 tl.set(".cutout-wrap", { opacity: 1 }, CUT);
 
