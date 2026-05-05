@@ -221,6 +221,19 @@ export function buildStreamingArgs(
           else args.push("-global_quality", String(quality));
           break;
       }
+
+      // Mirror SW branch: GPU h264 paths emit B-frames by default (nvenc, qsv,
+      // vaapi) and produce the same negative-DTS freeze for downstream players.
+      // See chunkEncoder.buildEncoderArgs for the full explanation.
+      if (
+        codec === "h264" &&
+        (gpuEncoder === "nvenc" || gpuEncoder === "qsv" || gpuEncoder === "vaapi")
+      ) {
+        args.push("-bf", "0");
+        if (gpuEncoder === "qsv") {
+          args.push("-b_strategy", "0");
+        }
+      }
     } else {
       const encoderName = codec === "h264" ? "libx264" : "libx265";
       args.push("-c:v", encoderName, "-preset", preset);

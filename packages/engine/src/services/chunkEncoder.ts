@@ -139,6 +139,25 @@ export function buildEncoderArgs(
           else args.push("-global_quality", String(quality));
           break;
       }
+
+      // Same B-frame story as the SW branch below — nvenc emits B-frames
+      // by default (qsv via b_strategy, vaapi too), and the negative-DTS
+      // freeze hits the same downstream players. The unconditional
+      // `-avoid_negative_ts make_zero` near the bottom of this function
+      // covers the mux level, but we belt-and-suspenders the encoder too
+      // so even tools that consume the chunk file directly (without going
+      // through our mux step) play correctly. videotoolbox doesn't accept
+      // `-bf` so it's skipped — videotoolbox h264 also doesn't emit
+      // negative DTS in practice on macOS Sonoma+.
+      if (
+        codec === "h264" &&
+        (gpuEncoder === "nvenc" || gpuEncoder === "qsv" || gpuEncoder === "vaapi")
+      ) {
+        args.push("-bf", "0");
+        if (gpuEncoder === "qsv") {
+          args.push("-b_strategy", "0");
+        }
+      }
     } else {
       const encoderName = codec === "h264" ? "libx264" : "libx265";
       args.push("-c:v", encoderName, "-preset", preset);

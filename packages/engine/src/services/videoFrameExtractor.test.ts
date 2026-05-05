@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -26,19 +34,11 @@ import { runFfmpeg } from "../utils/runFfmpeg.js";
 // synthesized VFR fixture.
 const HAS_FFMPEG = spawnSync("ffmpeg", ["-version"]).status === 0;
 
-// Regression: a long-standing footgun where `<video src="../assets/foo">`
-// inside a sub-composition silently dropped the video from extraction. The
-// browser's URL resolver clamps `..` at the served origin's root (so the
-// page renders fine in the studio), but `path.join(projectDir, "../assets/foo")`
-// normalizes to <parentOfProjectDir>/assets/foo, which doesn't exist. Result:
-// no extracted frames, no per-frame injection, the rendered output shows the
-// <video>'s first decoded frame for the whole clip duration. The resolver
-// now mirrors browser semantics by stripping leading `..` segments as a
-// fallback when the literal join doesn't exist.
-// Codec-based alpha defaulting is the deeper fix for the
-// `alpha_mode`-vs-`ALPHA_MODE` tag-detection bug (see ffprobe.test.ts). The
-// extractor uses these helpers to decide:
-//   1. whether to force the alpha-aware decoder (libvpx-vp9)
+// Codec-based alpha defaulting replaces tag-based detection (the
+// alpha_mode/ALPHA_MODE case bug — see ffprobe.test.ts for the regression
+// pin on that). The extractor uses these helpers for two decisions:
+//   1. whether to force the alpha-aware decoder (libvpx-vp9 for VP9, libvpx
+//      for VP8)
 //   2. whether to default the cached frame format to PNG (with alpha) vs JPG
 // The "default to capable" trade is small file-size growth on opaque VP9
 // content for correctness on alpha-having content even when the sidecar tag
@@ -70,14 +70,21 @@ describe("codec alpha capability", () => {
   });
 });
 
+// Regression: a long-standing footgun where `<video src="../assets/foo">`
+// inside a sub-composition silently dropped the video from extraction. The
+// browser's URL resolver clamps `..` at the served origin's root (so the
+// page renders fine in the studio), but `path.join(projectDir, "../assets/foo")`
+// normalizes to <parentOfProjectDir>/assets/foo, which doesn't exist —
+// extraction skipped, no frame injection, rendered output shows the video's
+// first decoded frame for the whole clip duration. The resolver now mirrors
+// browser semantics by clamping any traversal that escapes the project root.
 describe("resolveProjectRelativeSrc — sub-composition path clamping", () => {
   let tmp: string;
 
   beforeAll(() => {
     tmp = mkdtempSync(join(tmpdir(), "hf-resolver-"));
     mkdirSync(join(tmp, "project", "assets"), { recursive: true });
-    // Empty file is enough for existsSync — this test is about path resolution.
-    require("node:fs").writeFileSync(join(tmp, "project", "assets", "foo.mp4"), "");
+    writeFileSync(join(tmp, "project", "assets", "foo.mp4"), "");
   });
   afterAll(() => {
     rmSync(tmp, { recursive: true, force: true });
@@ -90,7 +97,7 @@ describe("resolveProjectRelativeSrc — sub-composition path clamping", () => {
     );
   });
 
-  it("clamps a leading `../` (sub-comp authoring) so `../assets/foo.mp4` resolves to assets/foo.mp4", () => {
+  it("clamps a leading `../` so `../assets/foo.mp4` resolves to assets/foo.mp4", () => {
     const projectDir = join(tmp, "project");
     expect(resolveProjectRelativeSrc("../assets/foo.mp4", projectDir)).toBe(
       join(projectDir, "assets/foo.mp4"),
@@ -100,6 +107,16 @@ describe("resolveProjectRelativeSrc — sub-composition path clamping", () => {
   it("clamps multiple leading `../../../` segments", () => {
     const projectDir = join(tmp, "project");
     expect(resolveProjectRelativeSrc("../../../assets/foo.mp4", projectDir)).toBe(
+      join(projectDir, "assets/foo.mp4"),
+    );
+  });
+
+  it("clamps mid-path traversal that escapes baseDir (not just leading `..`)", () => {
+    // `assets/../../foo.mp4` collapses past projectDir via path.join — this
+    // case used to silently escape; the resolver now strips embedded `..`
+    // segments and re-anchors at the project root.
+    const projectDir = join(tmp, "project");
+    expect(resolveProjectRelativeSrc("assets/../../assets/foo.mp4", projectDir)).toBe(
       join(projectDir, "assets/foo.mp4"),
     );
   });
@@ -115,7 +132,7 @@ describe("resolveProjectRelativeSrc — sub-composition path clamping", () => {
     const projectDir = join(tmp, "project");
     const compiledDir = join(tmp, "compiled");
     mkdirSync(join(compiledDir, "assets"), { recursive: true });
-    require("node:fs").writeFileSync(join(compiledDir, "assets", "foo.mp4"), "");
+    writeFileSync(join(compiledDir, "assets", "foo.mp4"), "");
     expect(resolveProjectRelativeSrc("assets/foo.mp4", projectDir, compiledDir)).toBe(
       join(compiledDir, "assets/foo.mp4"),
     );

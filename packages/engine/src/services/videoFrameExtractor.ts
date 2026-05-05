@@ -7,7 +7,7 @@
 
 import { spawn } from "child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "fs";
-import { isAbsolute, join } from "path";
+import { isAbsolute, join, posix, resolve, sep } from "path";
 import { parseHTML } from "linkedom";
 import { extractMediaMetadata, type VideoMetadata } from "../utils/ffprobe.js";
 import {
@@ -498,27 +498,44 @@ async function convertVfrToCfr(
  * `<projectDir>/assets/foo`) but the filesystem-side resolver lands at
  * `<parentOfProjectDir>/assets/foo` — file missing, extraction skipped,
  * the rendered output shows the video's first frame for the whole clip.
- * Mirror the clamp here.
+ *
+ * The clamp covers two escape patterns: leading `..` (`../assets/foo`) AND
+ * mid-path escapes (`assets/../../foo`) that `path.join` collapses past the
+ * project root silently. Both fall back to a project-rooted candidate that
+ * strips traversal from the resolved path.
  *
  * Returns the first existing candidate, or the base-dir join on miss so
- * the caller's existsSync check produces a stable error path.
+ * the caller's `existsSync` check produces a stable error path.
  */
 export function resolveProjectRelativeSrc(
   src: string,
   baseDir: string,
   compiledDir?: string,
 ): string {
-  const candidates = [
-    compiledDir && join(compiledDir, src),
-    join(baseDir, src),
-    ...(src.startsWith("..")
-      ? (() => {
-          const clamped = src.replace(/^(\.\.[\\/])+/, "");
-          return [compiledDir && join(compiledDir, clamped), join(baseDir, clamped)];
-        })()
-      : []),
-  ].filter(Boolean) as string[];
-  return candidates.find(existsSync) ?? join(baseDir, src);
+  const fromCompiled = compiledDir ? join(compiledDir, src) : null;
+  const fromBase = join(baseDir, src);
+  const candidates: string[] = [];
+  if (fromCompiled) candidates.push(fromCompiled);
+  candidates.push(fromBase);
+  // If the joined result escapes the project root (either via leading `..`
+  // or mid-path traversal that path.join collapsed past baseDir), retry
+  // with the basename re-anchored at the project root. This mirrors the
+  // browser URL clamp without relying on a particular `..` shape.
+  const baseAbs = resolve(baseDir);
+  const fromBaseAbs = resolve(fromBase);
+  if (!fromBaseAbs.startsWith(baseAbs + sep) && fromBaseAbs !== baseAbs) {
+    // Normalize first (`assets/../../assets/foo.mp4` → `../assets/foo.mp4`)
+    // then strip any remaining leading `..` segments. Stripping `..` from the
+    // raw input would leave dangling siblings (`assets/../../assets/foo`
+    // would become `assets/assets/foo` instead of `assets/foo`).
+    const normalized = posix.normalize(src.replace(/\\/g, "/"));
+    const stripped = normalized.replace(/^(\.\.\/)+/, "");
+    if (stripped && stripped !== src && !stripped.startsWith("..")) {
+      if (compiledDir) candidates.push(join(compiledDir, stripped));
+      candidates.push(join(baseDir, stripped));
+    }
+  }
+  return candidates.find(existsSync) ?? fromBase;
 }
 
 export async function extractAllVideoFrames(
@@ -549,6 +566,9 @@ export async function extractAllVideoFrames(
   // Phase 1: Resolve paths and download remote videos
   const phase1Start = Date.now();
   const resolvedVideos: Array<{ video: VideoElement; videoPath: string }> = [];
+  // Dedupe missing-src warnings: a composition with N <video> elements all
+  // pointing at the same broken src should only print one warning, not N.
+  const warnedSrcs = new Set<string>();
   for (const video of videos) {
     if (signal?.aborted) break;
     try {
@@ -569,14 +589,18 @@ export async function extractAllVideoFrames(
 
       if (!existsSync(videoPath)) {
         // Loud: silent miss leaves the rendered video frozen at frame 0 with
-        // no error in stdout — extremely confusing for authors.
-        process.stderr.write(
-          `[hyperframes:render] WARNING: video <${video.id}> src="${video.src}" ` +
-            `could not be resolved on disk (looked for ${videoPath}). ` +
-            `The rendered output will show this video's first frame for the entire clip duration. ` +
-            `If your <video> lives inside a sub-composition, prefer project-root-relative paths ` +
-            `(e.g. src="assets/foo.mp4") over "../assets/foo.mp4".\n`,
-        );
+        // no error in stdout — extremely confusing for authors. Dedupe by
+        // src so 50 broken videos pointing at the same path don't spam.
+        if (!warnedSrcs.has(video.src)) {
+          warnedSrcs.add(video.src);
+          process.stderr.write(
+            `[hyperframes:render] WARNING: video src="${video.src}" ` +
+              `could not be resolved on disk (looked for ${videoPath}). ` +
+              `The rendered output will show this video's first frame for the entire clip duration. ` +
+              `If your <video> lives inside a sub-composition, prefer project-root-relative paths ` +
+              `(e.g. src="assets/foo.mp4") over "../assets/foo.mp4".\n`,
+          );
+        }
         errors.push({ videoId: video.id, error: `Video file not found: ${videoPath}` });
         continue;
       }

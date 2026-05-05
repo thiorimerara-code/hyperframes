@@ -20,15 +20,15 @@ import { type Device, type ModelId } from "./manager.js";
 
 export type OutputFormat = "webm" | "mov" | "png";
 
-export type Quality = "fast" | "balanced" | "best";
-
-export const QUALITIES: readonly Quality[] = ["fast", "balanced", "best"] as const;
-
-export const QUALITY_CRF: Record<Quality, number> = {
+export const QUALITY_CRF = {
   fast: 30,
   balanced: 18,
   best: 12,
-};
+} as const;
+
+export type Quality = keyof typeof QUALITY_CRF;
+
+export const QUALITIES = Object.keys(QUALITY_CRF) as readonly Quality[];
 
 export const DEFAULT_QUALITY: Quality = "balanced";
 
