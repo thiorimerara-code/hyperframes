@@ -1,6 +1,6 @@
 ---
 name: hyperframes-cli
-description: HyperFrames CLI tool — hyperframes init, lint, inspect, preview, render, transcribe, tts, remove-background, doctor, browser, info, upgrade, compositions, docs, benchmark. Use when scaffolding a project, linting, validating, inspecting visual layout in compositions, previewing in the studio, rendering to video, transcribing audio, generating TTS, removing the background from an avatar video for transparent overlays, or troubleshooting the HyperFrames environment.
+description: HyperFrames CLI dev loop — `npx hyperframes` for scaffolding (init), validation (lint, inspect), preview, render, and environment troubleshooting (doctor, browser, info, upgrade). Use when running any of these commands or troubleshooting the HyperFrames build/render environment. For asset preprocessing commands (`tts`, `transcribe`, `remove-background`), invoke the `hyperframes-media` skill instead.
 ---
 
 # HyperFrames CLI
@@ -120,37 +120,9 @@ npx hyperframes render --docker                       # byte-identical
 
 **Parametrized renders:** the composition declares its variables on the `<html>` root with **`data-composition-variables`** — a JSON **array of declarations** (`{id, type, label, default}` per entry) that defines the schema. Scripts inside read the resolved values via `window.__hyperframes.getVariables()`. The CLI **`--variables '{"title":"Q4 Report"}'`** is a JSON **object keyed by id** that overrides those declared defaults for one render; missing keys fall through, so the same composition runs unchanged in dev preview and in production. (Sub-comp hosts can also override per-instance with **`data-variable-values`** — same object shape, scoped to one mount of the sub-composition. See the `hyperframes` skill for the full pattern.)
 
-## Transcription
+## Asset Preprocessing
 
-```bash
-npx hyperframes transcribe audio.mp3
-npx hyperframes transcribe video.mp4 --model medium.en --language en
-npx hyperframes transcribe subtitles.srt   # import existing
-npx hyperframes transcribe subtitles.vtt
-npx hyperframes transcribe openai-response.json
-```
-
-## Text-to-Speech
-
-```bash
-npx hyperframes tts "Text here" --voice af_nova --output narration.wav
-npx hyperframes tts script.txt --voice bf_emma
-npx hyperframes tts --list  # show all voices
-```
-
-## Background Removal (transparent video)
-
-Remove the background from a video or image so it can be used as a transparent overlay in a composition (e.g. an avatar floating on a background).
-
-```bash
-npx hyperframes remove-background avatar.mp4 -o transparent.webm  # default: VP9 alpha WebM
-npx hyperframes remove-background avatar.mp4 -o transparent.mov   # ProRes 4444 for editing
-npx hyperframes remove-background portrait.jpg -o cutout.png      # single-image cutout
-npx hyperframes remove-background avatar.mp4 -o transparent.webm --device cpu
-npx hyperframes remove-background --info                          # detected providers
-```
-
-Uses `u2net_human_seg` (MIT). First run downloads ~168 MB of weights to `~/.cache/hyperframes/background-removal/models/` and reuses them after. Drop the resulting `.webm` into a composition with `<video src="transparent.webm" autoplay muted loop>` — Chrome decodes the alpha natively.
+`npx hyperframes tts`, `transcribe`, and `remove-background` produce assets (narration audio, word-level transcripts, transparent video) that get dropped into a composition. Each downloads its own model on first run. For voice selection, whisper model rules (the `.en`-translates-non-English gotcha), output format choice (VP9 alpha WebM vs ProRes), and the TTS → transcribe → captions chain, invoke the `hyperframes-media` skill.
 
 ## Troubleshooting
 
