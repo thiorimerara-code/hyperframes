@@ -20,11 +20,28 @@ import { type Device, type ModelId } from "./manager.js";
 
 export type OutputFormat = "webm" | "mov" | "png";
 
+export const QUALITY_CRF = {
+  fast: 30,
+  balanced: 18,
+  best: 12,
+} as const;
+
+export type Quality = keyof typeof QUALITY_CRF;
+
+export const QUALITIES = Object.keys(QUALITY_CRF) as readonly Quality[];
+
+export const DEFAULT_QUALITY: Quality = "balanced";
+
+export const isQuality = (v: unknown): v is Quality =>
+  typeof v === "string" && (QUALITIES as readonly string[]).includes(v);
+
 export interface RenderOptions {
   inputPath: string;
   outputPath: string;
   device?: Device;
   model?: ModelId;
+  /** Encoder CRF preset for `.webm`. See `QUALITY_CRF`. Ignored for `.mov`/`.png`. */
+  quality?: Quality;
   onProgress?: (event: ProgressEvent) => void;
 }
 
@@ -100,6 +117,7 @@ export function buildEncoderArgs(
   height: number,
   fps: number,
   outputPath: string,
+  quality: Quality = DEFAULT_QUALITY,
 ): string[] {
   const base = [
     "-y",
@@ -123,7 +141,7 @@ export function buildEncoderArgs(
       "-b:v",
       "0",
       "-crf",
-      "30",
+      String(QUALITY_CRF[quality]),
       "-deadline",
       "good",
       "-row-mt",
@@ -132,6 +150,19 @@ export function buildEncoderArgs(
       "0",
       "-pix_fmt",
       "yuva420p",
+      // Tag the output as BT.709 limited range so browsers use the same
+      // YUV→RGB matrix the source video was encoded with. Without these tags
+      // ffmpeg's default RGB→YUV conversion is BT.601, which causes a visible
+      // color shift (red/skin tones in particular) when the matted overlay is
+      // composited over the original mp4.
+      "-colorspace",
+      "bt709",
+      "-color_primaries",
+      "bt709",
+      "-color_trc",
+      "bt709",
+      "-color_range",
+      "tv",
       "-metadata:s:v:0",
       "alpha_mode=1",
       "-an",
@@ -250,9 +281,20 @@ async function runPipeline(
   });
   const decoderExit = waitForExit(decoder, "ffmpeg decoder", () => decoderStderr);
 
-  const encoder = spawn("ffmpeg", buildEncoderArgs(format, width, height, fps || 30, outputPath), {
-    stdio: ["pipe", "ignore", "pipe"],
-  });
+  const encoder = spawn(
+    "ffmpeg",
+    buildEncoderArgs(
+      format,
+      width,
+      height,
+      fps || 30,
+      outputPath,
+      options.quality ?? DEFAULT_QUALITY,
+    ),
+    {
+      stdio: ["pipe", "ignore", "pipe"],
+    },
+  );
   let encoderStderr = "";
   encoder.stderr?.on("data", (d: Buffer) => {
     encoderStderr += d.toString();

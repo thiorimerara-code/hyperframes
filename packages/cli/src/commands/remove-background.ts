@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import * as clack from "@clack/prompts";
 import { c } from "../ui/colors.js";
 import { isDevice, DEVICES } from "../background-removal/manager.js";
+import { DEFAULT_QUALITY, QUALITIES, isQuality } from "../background-removal/pipeline.js";
 import type { Example } from "./_examples.js";
 
 export const examples: Example[] = [
@@ -22,6 +23,14 @@ export const examples: Example[] = [
   [
     "Force CPU (skip CoreML/CUDA)",
     "hyperframes remove-background avatar.mp4 -o transparent.webm --device cpu",
+  ],
+  [
+    "Smaller file at the cost of color match (text-behind-subject won't blend as cleanly)",
+    "hyperframes remove-background avatar.mp4 -o transparent.webm --quality fast",
+  ],
+  [
+    "Visually-lossless WebM (master / re-encode source)",
+    "hyperframes remove-background avatar.mp4 -o transparent.webm --quality best",
   ],
   ["Show detected providers without rendering", "hyperframes remove-background --info"],
 ];
@@ -47,6 +56,11 @@ export default defineCommand({
       type: "string",
       description: `Execution provider: ${DEVICES.join(", ")}`,
       default: "auto",
+    },
+    quality: {
+      type: "string",
+      description: `Encoder quality preset for .webm output: ${QUALITIES.join(", ")} (default: ${DEFAULT_QUALITY}). Higher quality = closer color match when overlaying on the source mp4, larger file. Ignored for .mov / .png.`,
+      default: DEFAULT_QUALITY,
     },
     info: {
       type: "boolean",
@@ -81,6 +95,12 @@ export default defineCommand({
       );
       process.exit(1);
     }
+    if (!isQuality(args.quality)) {
+      console.error(
+        c.error(`Invalid --quality '${String(args.quality)}'. Use: ${QUALITIES.join(", ")}.`),
+      );
+      process.exit(1);
+    }
 
     const inputPath = resolve(args.input);
     const outputPath = resolve(args.output);
@@ -95,6 +115,7 @@ export default defineCommand({
         inputPath,
         outputPath,
         device: args.device,
+        quality: args.quality,
         onProgress: (event) => {
           if (event.kind === "info") {
             spin?.message(event.message);

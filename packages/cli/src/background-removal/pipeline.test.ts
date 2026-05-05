@@ -46,6 +46,35 @@ describe("background-removal/pipeline — buildEncoderArgs", () => {
     expect(args[args.length - 1]).toBe("/tmp/out.webm");
   });
 
+  it("webm preset tags BT.709 colorspace + limited range", () => {
+    // Without these tags, ffmpeg's RGB→YUV conversion uses the BT.601 default,
+    // and Chrome's YUV→RGB pass on the resulting webm produces a different
+    // RGB triple than the source mp4 (visible color shift on overlay). Pin
+    // BT.709 limited-range so the cutout matches modern Rec.709 sources.
+    const args = buildEncoderArgs("webm", 1920, 1080, 30, "/tmp/out.webm");
+    const csIdx = args.indexOf("-colorspace");
+    expect(csIdx).toBeGreaterThan(-1);
+    expect(args[csIdx + 1]).toBe("bt709");
+    const rangeIdx = args.indexOf("-color_range");
+    expect(rangeIdx).toBeGreaterThan(-1);
+    expect(args[rangeIdx + 1]).toBe("tv");
+  });
+
+  it("webm quality presets map to crf 30/18/12", () => {
+    const fast = buildEncoderArgs("webm", 1920, 1080, 30, "/tmp/o.webm", "fast");
+    const balanced = buildEncoderArgs("webm", 1920, 1080, 30, "/tmp/o.webm", "balanced");
+    const best = buildEncoderArgs("webm", 1920, 1080, 30, "/tmp/o.webm", "best");
+    const crf = (args: string[]) => args[args.indexOf("-crf") + 1];
+    expect(crf(fast)).toBe("30");
+    expect(crf(balanced)).toBe("18");
+    expect(crf(best)).toBe("12");
+  });
+
+  it("webm default quality is balanced (crf 18)", () => {
+    const args = buildEncoderArgs("webm", 1920, 1080, 30, "/tmp/o.webm");
+    expect(args[args.indexOf("-crf") + 1]).toBe("18");
+  });
+
   it("mov preset emits ProRes 4444 + yuva444p10le", () => {
     const args = buildEncoderArgs("mov", 1920, 1080, 30, "/tmp/out.mov");
     expect(args).toContain("prores_ks");

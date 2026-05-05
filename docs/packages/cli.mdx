@@ -367,6 +367,7 @@ This is suppressed in CI environments, non-TTY shells, and when `HYPERFRAMES_NO_
     |------|-------------|
     | `--output, -o` | Output path. Format inferred from extension: `.webm` (default), `.mov`, `.png` |
     | `--device` | Execution provider: `auto` (default), `cpu`, `coreml`, `cuda` |
+    | `--quality` | WebM encoder preset: `fast` (crf 30, smallest), `balanced` (crf 18, default), `best` (crf 12, near-lossless). Higher quality keeps the cutout's RGB closer to the source mp4 — important when overlaying the cutout on its own source for text-behind-subject effects. Ignored for `.mov` / `.png`. |
     | `--info` | Print detected execution providers and exit (no render) |
     | `--json` | Output result as JSON |
 

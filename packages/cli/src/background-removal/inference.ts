@@ -159,10 +159,16 @@ async function postprocess(
   }
 
   // lanczos3 keeps soft edges; nearest leaves visible jaggies on hair.
+  // Sharp upcasts the single-channel raw input to a 3-channel buffer during
+  // resize, so the output is laid out as RGB-interleaved (R0,G0,B0,R1,G1,B1,...)
+  // even though all three channels carry the same grayscale value. Force the
+  // output back to single channel with toColourspace("b-w") so we can index
+  // it linearly as a mask.
   const fullMask = await sharp(maskBuf, {
     raw: { width: INPUT_SIZE, height: INPUT_SIZE, channels: 1 },
   })
     .resize(width, height, { kernel: "lanczos3", fit: "fill" })
+    .toColourspace("b-w")
     .raw()
     .toBuffer();
 
