@@ -650,7 +650,14 @@ async function runTestSuite(
     // Visual comparison (100 frames, 1 per 1% of video duration)
     logPretty("Comparing visual quality (100 checkpoints)...", "🔍");
     const videoMetadata = await extractMediaMetadata(renderedOutputPath);
-    const videoDuration = videoMetadata.durationSeconds;
+    const snapshotMetadata = await extractMediaMetadata(snapshotVideoPath);
+    // Sample at the common duration. Container duration can drift between
+    // rendered and snapshot when encoder/mux flags change (e.g. -avoid_negative_ts
+    // can shift the first audio sample, extending reported duration without
+    // changing video frame count). Using the rendered duration alone makes the
+    // last checkpoint land on a frame index that may not exist in the snapshot,
+    // which causes ffmpeg's PSNR filter to emit no `average:` line.
+    const videoDuration = Math.min(videoMetadata.durationSeconds, snapshotMetadata.durationSeconds);
 
     const visualCheckpoints: Array<{ time: number; psnr: number; passed: boolean }> = [];
     for (let i = 0; i < 100; i++) {
