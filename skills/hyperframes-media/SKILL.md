@@ -124,6 +124,58 @@ Uses `u2net_human_seg` (MIT). First run downloads ~168 MB of weights to `~/.cach
 
 Chrome decodes VP9 alpha natively, so the `.webm` plugs into a composition like any other muted-autoplay video — see the `hyperframes` skill for the `<video>` track conventions.
 
+### Quality presets
+
+`--quality fast|balanced|best` controls only the VP9 encoder's CRF — segmentation quality is fixed.
+
+| Preset     | CRF | When                                                  |
+| ---------- | --- | ----------------------------------------------------- |
+| `fast`     | 30  | Iterating, smaller file, looser color match           |
+| `balanced` | 18  | Default. Visually identical for most uses             |
+| `best`     | 12  | Master / final delivery. Largest file, tightest match |
+
+### Compositing patterns — pick the right one
+
+The cutout webm is a **re-encoded copy** of the source mp4's RGB. That choice has consequences depending on what you put behind it:
+
+| Pattern                                                  | What's behind the cutout                   | Result                                                                                                                                                                                                                             |
+| -------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cutout over a different scene** (most common)          | Static image, gradient, or unrelated video | Looks great. The cutout's RGB is the only avatar source — no double-Brandon, no edge halo. This is what `remove-background` is built for.                                                                                          |
+| **Cutout over its own source mp4** (text-behind-subject) | Same mp4 the cutout was generated from     | Two RGB sources for the same Brandon. At default `--quality balanced` (crf 18) the doubling is barely visible; at `--quality fast` (crf 30) you'll see a faint color shift / edge halo. Use `--quality best` (crf 12) for masters. |
+| **Cutout over a _different_ take of the same person**    | Footage of the same subject                | Will look like two separate people overlapping. Don't do this.                                                                                                                                                                     |
+
+**Text-behind-subject** (headline behind a presenter):
+
+```html
+<video
+  src="brandon.mp4"
+  id="bg"
+  data-start="0"
+  data-duration="6"
+  data-track-index="0"
+  muted
+  playsinline
+></video>
+<h1 id="headline" style="z-index:2; ...">MAKE IT IN HYPERFRAMES</h1>
+<div class="cutout-wrap" style="position:absolute;inset:0;z-index:3;opacity:0">
+  <video
+    src="brandon.webm"
+    data-start="0"
+    data-duration="6"
+    data-track-index="1"
+    muted
+    playsinline
+  ></video>
+</div>
+```
+
+Two key rules:
+
+1. **Wrap the cutout video in a non-timed `<div>`** and animate the wrapper's opacity, not the video element's. The framework forces opacity:1 on active clips (any element with `data-start`/`data-duration`), so animating the video's opacity directly is silently overridden. The wrapper has no `data-*` attributes, so it's owned by your CSS/GSAP.
+2. **Both videos use `data-start="0"` and `data-media-start="0"`** so the framework decodes them in sync from t=0. Late-mounting the cutout (`data-start=3.3`) introduces a seek + warm-up that lands a frame off the base mp4 — visible as one frame of misalignment at the cut.
+
+Then GSAP-flip the wrapper opacity at the cut: `tl.set(cutoutWrap, { opacity: 1 }, 3.3)`.
+
 ## TTS → Transcribe → Captions
 
 When there's no pre-recorded voiceover, generate one and transcribe it back to get word-level timestamps for captions:
