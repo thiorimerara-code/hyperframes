@@ -277,7 +277,13 @@ export async function extractMediaMetadata(filePath: string): Promise<VideoMetad
         : null;
     const colorSpace = ffprobeColorSpace ?? stillImageMeta?.colorSpace ?? null;
     const pixelFormat = videoStream.pix_fmt || "";
-    const alphaMode = videoStream.tags?.alpha_mode || "";
+    // ffmpeg writes the VP9-alpha sidecar tag as either `alpha_mode` (older
+    // builds) or `ALPHA_MODE` (libavformat ≥ 6.x). Read case-insensitively
+    // so the alpha-aware extraction path triggers on both — without this
+    // the producer extracted alpha-having webms as opaque JPGs and the
+    // injected <img> covered everything below it on the z-stack.
+    const tags = (videoStream.tags ?? {}) as Record<string, string | undefined>;
+    const alphaMode = tags.alpha_mode ?? tags.ALPHA_MODE ?? "";
     const hasAlpha =
       /(^|[^a-z])yuva|rgba|argb|bgra|gbrap|gray[a-z0-9]*a/i.test(pixelFormat) || alphaMode === "1";
 
