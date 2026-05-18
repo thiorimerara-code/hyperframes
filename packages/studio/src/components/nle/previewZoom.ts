@@ -78,6 +78,24 @@ export function clampPreviewPan(input: {
   };
 }
 
+function clampPreviewPanForZoom(
+  panX: number,
+  panY: number,
+  zoomPercent: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  contentWidth: number,
+  contentHeight: number,
+): Pick<PreviewZoomState, "panX" | "panY"> {
+  const scale = clampPreviewZoomPercent(zoomPercent) / 100;
+  const maxPanX = Math.abs(contentWidth * scale - viewportWidth) / 2 + PREVIEW_PAN_OVERSCROLL_PX;
+  const maxPanY = Math.abs(contentHeight * scale - viewportHeight) / 2 + PREVIEW_PAN_OVERSCROLL_PX;
+  return {
+    panX: Math.min(maxPanX, Math.max(-maxPanX, panX)),
+    panY: Math.min(maxPanY, Math.max(-maxPanY, panY)),
+  };
+}
+
 export function resolvePreviewWheelZoom(input: {
   state: PreviewZoomState;
   deltaY: number;
@@ -85,20 +103,34 @@ export function resolvePreviewWheelZoom(input: {
   viewportHeight: number;
   contentWidth?: number;
   contentHeight?: number;
+  cursorX?: number;
+  cursorY?: number;
 }): PreviewZoomState {
-  const nextZoomPercent = getPreviewWheelZoomPercent(
-    input.deltaY,
-    clampPreviewZoomPercent(input.state.zoomPercent),
+  const oldZoom = clampPreviewZoomPercent(input.state.zoomPercent);
+  const nextZoomPercent = getPreviewWheelZoomPercent(input.deltaY, oldZoom);
+  const oldScale = oldZoom / 100;
+  const newScale = nextZoomPercent / 100;
+
+  let panX = input.state.panX;
+  let panY = input.state.panY;
+
+  if (input.cursorX !== undefined && input.cursorY !== undefined) {
+    const ratio = newScale / oldScale;
+    panX = input.cursorX * (1 - ratio) + panX * ratio;
+    panY = input.cursorY * (1 - ratio) + panY * ratio;
+  }
+
+  const cw = input.contentWidth ?? input.viewportWidth;
+  const ch = input.contentHeight ?? input.viewportHeight;
+  const pan = clampPreviewPanForZoom(
+    panX,
+    panY,
+    nextZoomPercent,
+    input.viewportWidth,
+    input.viewportHeight,
+    cw,
+    ch,
   );
-  const pan = clampPreviewPan({
-    panX: input.state.panX,
-    panY: input.state.panY,
-    zoomPercent: nextZoomPercent,
-    viewportWidth: input.viewportWidth,
-    viewportHeight: input.viewportHeight,
-    contentWidth: input.contentWidth,
-    contentHeight: input.contentHeight,
-  });
 
   return {
     zoomPercent: nextZoomPercent,

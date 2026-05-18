@@ -187,6 +187,110 @@ describe("resolvePreviewWheelZoom", () => {
     expect(next.panX).toBe(20);
     expect(next.panY).toBe(20);
   });
+
+  it("zooms toward the cursor when cursorX/cursorY are provided", () => {
+    const next = resolvePreviewWheelZoom({
+      state: DEFAULT_PREVIEW_ZOOM,
+      deltaY: -5,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      cursorX: 200,
+      cursorY: 100,
+    });
+
+    expect(next.zoomPercent).toBeGreaterThan(100);
+    expect(next.panX).toBeLessThan(0);
+    expect(next.panY).toBeLessThan(0);
+  });
+
+  it("keeps pan at zero when cursor is at viewport center", () => {
+    const next = resolvePreviewWheelZoom({
+      state: DEFAULT_PREVIEW_ZOOM,
+      deltaY: -5,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      cursorX: 0,
+      cursorY: 0,
+    });
+
+    expect(next.zoomPercent).toBeGreaterThan(100);
+    expect(next.panX).toBe(0);
+    expect(next.panY).toBe(0);
+  });
+
+  it("scales pan proportionally when cursor is at center", () => {
+    const next = resolvePreviewWheelZoom({
+      state: { zoomPercent: 200, panX: 50, panY: 30 },
+      deltaY: -5,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      contentWidth: 800,
+      contentHeight: 450,
+      cursorX: 0,
+      cursorY: 0,
+    });
+
+    const ratio = next.zoomPercent / 200;
+    expect(next.panX).toBeCloseTo(50 * ratio, 1);
+    expect(next.panY).toBeCloseTo(30 * ratio, 1);
+  });
+
+  it("keeps the content point under a non-center cursor fixed after zoom", () => {
+    const cursorX = 150;
+    const cursorY = -80;
+    const state: PreviewZoomState = { zoomPercent: 150, panX: 20, panY: -10 };
+    const oldScale = state.zoomPercent / 100;
+
+    const next = resolvePreviewWheelZoom({
+      state,
+      deltaY: -5,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      contentWidth: 800,
+      contentHeight: 450,
+      cursorX,
+      cursorY,
+    });
+
+    const newScale = next.zoomPercent / 100;
+    const contentXBefore = (cursorX - state.panX) / oldScale;
+    const contentXAfter = (cursorX - next.panX) / newScale;
+    const contentYBefore = (cursorY - state.panY) / oldScale;
+    const contentYAfter = (cursorY - next.panY) / newScale;
+
+    expect(contentXAfter).toBeCloseTo(contentXBefore, 6);
+    expect(contentYAfter).toBeCloseTo(contentYBefore, 6);
+  });
+
+  it("uses wider pan range for cursor zoom than manual drag", () => {
+    let state: PreviewZoomState = { zoomPercent: 100, panX: 0, panY: 0 };
+    for (let i = 0; i < 40; i++) {
+      state = resolvePreviewWheelZoom({
+        state,
+        deltaY: 5,
+        viewportWidth: 800,
+        viewportHeight: 600,
+        contentWidth: 800,
+        contentHeight: 450,
+        cursorX: -300,
+        cursorY: 0,
+      });
+    }
+
+    expect(state.zoomPercent).toBeLessThan(100);
+
+    const dragClamped = clampPreviewPan({
+      panX: state.panX,
+      panY: state.panY,
+      zoomPercent: state.zoomPercent,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      contentWidth: 800,
+      contentHeight: 450,
+    });
+
+    expect(Math.abs(state.panX)).toBeGreaterThan(Math.abs(dragClamped.panX));
+  });
 });
 
 describe("resolvePreviewWheelPan", () => {
