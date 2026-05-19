@@ -195,6 +195,27 @@ function studioPositionSeekReapplyRuntime(): void {
       (tl.totalTime as (t: number, s: boolean) => void)(lastSeekTime, false);
   };
 
+  const stripGsapTranslateFromTransform = (el: HTMLElement): void => {
+    const transform = el.style.getPropertyValue("transform");
+    if (!transform || transform === "none") return;
+    const win = el.ownerDocument.defaultView as (Window & typeof globalThis) | null;
+    const MatrixCtor = (win as unknown as { DOMMatrix?: typeof DOMMatrix })?.DOMMatrix;
+    if (!MatrixCtor) return;
+    try {
+      const m = new MatrixCtor(transform);
+      if (m.m41 === 0 && m.m42 === 0) return;
+      m.m41 = 0;
+      m.m42 = 0;
+      if (m.is2D && m.a === 1 && m.b === 0 && m.c === 0 && m.d === 1) {
+        el.style.removeProperty("transform");
+      } else {
+        el.style.setProperty("transform", m.toString());
+      }
+    } catch {
+      /* non-parseable transform — leave as-is */
+    }
+  };
+
   const reapplyAll = (): void => {
     const offsetEls = document.querySelectorAll("[" + PATH_OFFSET_ATTR + '="true"]');
     for (let i = 0; i < offsetEls.length; i++) {
@@ -211,6 +232,7 @@ function studioPositionSeekReapplyRuntime(): void {
             "var(" + OFFSET_Y_PROP + ", 0px)",
           ),
         );
+        stripGsapTranslateFromTransform(el);
       }
     }
     const boxSizeEls = document.querySelectorAll("[" + BOX_SIZE_ATTR + '="true"]');
